@@ -112,30 +112,3 @@ def create_embeddings(texts: List[str], model_name: str = "all-MiniLM-L6-v2"):
     return embeddings.tolist()
 
 
-def retrieve_relevant_chunks(query_embedding, embeddings, top_k=5):
-    """
-    Find the most relevant chunks based on cosine similarity.
-    
-    Args:
-        query_embedding: The query's embedding vector
-        embeddings: List of document embeddings
-        top_k: Number of top results to return
-        
-    Returns:
-        List of indices of top_k most relevant chunks
-    """
-    import numpy as np
-    
-    # Compute cosine similarities
-    similarities = []
-    query_norm = np.linalg.norm(query_embedding)
-    
-    for emb in embeddings:
-        similarity = np.dot(query_embedding, emb) / (query_norm * np.linalg.norm(emb))
-        similarities.append(similarity)
-    
-    # Get top_k indices
-    top_indices = np.argsort(similarities)[-top_k:][::-1]
-    
-    return top_indices.tolist()
-

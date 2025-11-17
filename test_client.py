@@ -2,10 +2,8 @@
 Simple test client for AskMyPDF API
 """
 import requests
-import os
 
 BASE_URL = "http://localhost:8000"
-API_KEY = os.getenv("API_KEY", "your_api_key_here")
 
 
 def test_health():
@@ -36,7 +34,6 @@ def test_query(question: str, top_k: int = 5):
     print(f"Querying: {question}")
     response = requests.post(
         f"{BASE_URL}/query",
-        headers={"Authorization": f"Bearer {API_KEY}"},
         json={"question": question, "top_k": top_k}
     )
     print(f"Status: {response.status_code}")

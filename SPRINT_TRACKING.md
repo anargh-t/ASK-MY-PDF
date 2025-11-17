@@ -19,7 +19,7 @@
 - ✅ Created Python project structure with `api_server.py`
 - ✅ Created `requirements.txt` with cloud-native dependencies:
   - `fastapi`, `uvicorn` (API infrastructure)
-  - `langchain`, `langchain-community`, `langchain-huggingface` (RAG orchestration)
+  - `google-generativeai`, `openai`, `httpx` (hosted LLM access)
   - `pinecone-client` (Cloud Vector DB)
   - `transformers`, `sentence-transformers` (Embeddings)
   - `pypdf` (PDF processing)
@@ -43,7 +43,7 @@
 **Completion Date:** [Current Date]
 
 **Actions Taken:**
-- ✅ Integrated LangChain with HuggingFace Endpoint
+- ✅ Integrated hosted LLM APIs (Gemini / OpenAI / Hugging Face)
 - ✅ Configured LLM initialization on server startup
 - ✅ Stored LLM in application state for reuse
 - ✅ Default model: `mistralai/Mistral-7B-Instruct-v0.1`
@@ -116,8 +116,7 @@ app_state['vector_store'].upsert(vectors=batch)
   - Uploads to Pinecone vector store
   - Returns processing confirmation
 - ✅ Implemented `/query` endpoint
-  - Accepts question JSON with top_k parameter
-  - Requires API key authentication
+  - Accepts question JSON with optional `top_k` parameter
   - Retrieves relevant chunks from Pinecone
   - Generates answer using hosted LLM
   - Returns answer with relevant chunks
@@ -147,8 +146,7 @@ async def query_pdf(request: QueryRequest):
 **Completion Date:** [Current Date]
 
 **Actions Taken:**
-- ✅ Implemented API key middleware using HTTPBearer
-- ✅ Protected `/query` endpoint with API key verification
+- ✅ Simplified single-tenant access (API key prompt removed from UI)
 - ✅ Cost logging for LLM API calls
   - Logs success/failure
   - Tracks tokens used
@@ -156,13 +154,6 @@ async def query_pdf(request: QueryRequest):
 
 **Implementation Details:**
 ```python
-# API Key Security
-security = HTTPBearer()
-
-async def verify_api_key(credentials):
-    if credentials.credentials != settings.api_key:
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
 # Cost Logging
 def log_llm_cost(success: bool, tokens_used: int = 0, error: str = None):
     if success:
@@ -173,7 +164,6 @@ def log_llm_cost(success: bool, tokens_used: int = 0, error: str = None):
 
 **Artifacts:**
 - `api_server.py`:
-  - Security middleware (lines 42-47)
   - Cost logging function (lines 151-158)
   - Usage in query endpoint (lines 280-290)
 

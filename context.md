@@ -25,15 +25,14 @@ We will reuse the proven core RAG logic from the existing files, but integrate n
 
 ### A. Reusable Core Functions (`rag_utils.py`):
 
-The following functions are **essential** and should be integrated into the new FastAPI service structure:
+The following functions are **essential** and are reused by the FastAPI service:
 
 * `open_and_read_pdf`: PDF text extraction.
 * `create_chunks_from_pages`: Text chunking logic.
 * `text_formatter`: Text cleaning.
 * `create_embeddings`: Embedding generation (still runs locally on the client's embedding model).
-* `retrieve_relevant_chunks`: The core vector search logic (will be replaced by the external DB's client wrapper).
-* `setup_llm`: LLM loading (will be replaced by the LangChain/HF Endpoint wrapper).
-* `rag_pipeline`: Orchestration of the entire process.
+
+Vector search and LLM orchestration now live directly inside `api_server.py` so the utilities stay lightweight.
 
 ### B. New Required Libraries (`requirements.txt` updates):
 
@@ -42,8 +41,8 @@ The existing `requirements.txt` must be updated to replace local tools with clou
 | Local Tool (Removed) | Cloud-Native Tool (Added) | Purpose |
 | :--- | :--- | :--- |
 | `streamlit` | **`fastapi` & `uvicorn`** | API infrastructure. |
-| `faiss-cpu` | **`pinecone-client` or `weaviate-client`** | Cloud-managed Vector Database. |
-| (Not present) | **`langchain` & `langchain-huggingface`** | RAG chain orchestration and HF Endpoint integration. |
+| `faiss-cpu` | **`pinecone-client`** | Cloud-managed Vector Database. |
+| (Not present) | **Provider SDKs (google-generativeai / openai) + httpx** | Hosted LLM access. |
 
 ---
 
@@ -54,12 +53,12 @@ These tasks correspond to the highest priority stories (R-01, R-02, D-01, S-01, 
 ### Task 1: Setup & Environment
 
 * **Action:** Create a new Python project structure, including `api_server.py` and a new `requirements.txt`.
-* **Update:** Modify `requirements.txt` to include `fastapi`, `uvicorn`, `langchain`, `langchain-huggingface`, and the chosen Vector DB client.
+* **Update:** Modify `requirements.txt` to include `fastapi`, `uvicorn`, the hosted LLM SDKs (`google-generativeai`, `openai`), and the chosen vector DB client.
 * **Constraint:** Set up environment variables for the Hugging Face API key (`HUGGINGFACEHUB_API_TOKEN`) and the chosen Vector DB API key/endpoint.
 
 ### Task 2: Implement Hosted LLM Inference (R-01)
 
-* **Action:** In `api_server.py`, implement the LLM setup using **`LangChain`** and **`HuggingFaceEndpoint`** (or `ChatHuggingFace`) to connect to a hosted LLM (e.g., Mistral 7B).
+* **Action:** In `api_server.py`, initialize the selected hosted LLM provider (Gemini, OpenAI, or Hugging Face Inference API) using their official SDKs or HTTPS endpoints.
 * **Constraint:** This must be initialized **once** during server startup and stored in the application state.
 
 ### Task 3: Implement Cloud Vector Store (R-02)
