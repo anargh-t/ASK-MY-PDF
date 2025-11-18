@@ -14,7 +14,7 @@ PyMuPDF==1.23.7
 
 # RAG + embeddings
 sentence-transformers==2.3.1
-faiss-cpu==1.7.4
+faiss-cpu>=1.8.0
 
 # LLM providers
 google-generativeai==0.5.2

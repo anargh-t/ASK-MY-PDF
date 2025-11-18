@@ -134,6 +134,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     relevant_chunks: List[str]
+    references: List[Dict] = []
     metrics: Dict[str, float]
     timestamp: datetime
 
@@ -337,6 +338,10 @@ async def query_pdf(payload: QueryRequest):
     return QueryResponse(
         answer=answer,
         relevant_chunks=[chunk["text"][:200] + "..." for chunk in chunks],
+        references=[
+            {"page": chunk["metadata"].get("page", 1), "text": chunk["text"][:100]}
+            for chunk in chunks
+        ],
         metrics=metrics_dict,
         timestamp=datetime.utcnow(),
     )
