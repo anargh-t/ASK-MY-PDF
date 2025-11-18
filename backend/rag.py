@@ -32,6 +32,7 @@ class QueryMetrics:
 
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> List[Chunk]:
+    import re
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=overlap,
@@ -40,14 +41,20 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[Chunk]:
     chunks: List[Chunk] = []
     for idx, segment in enumerate(splitter.split_text(text)):
         if segment.strip():
-            chunks.append(
-                Chunk(
-                    id=str(uuid.uuid4()),
-                    doc_id="",
-                    text=segment.strip(),
-                    page=idx + 1,
+            # Extract page number from marker if present
+            page_match = re.search(r'<<PAGE_(\d+)>>', segment)
+            page_num = int(page_match.group(1)) if page_match else idx + 1
+            # Remove page markers from text
+            clean_text = re.sub(r'<<PAGE_\d+>>\s*', '', segment).strip()
+            if clean_text:
+                chunks.append(
+                    Chunk(
+                        id=str(uuid.uuid4()),
+                        doc_id="",
+                        text=clean_text,
+                        page=page_num,
+                    )
                 )
-            )
     return chunks
 
 

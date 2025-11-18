@@ -51,9 +51,10 @@ def _extract_with_pdfplumber(file_path: Path) -> Tuple[str, List[List[str]]]:
     with pdfplumber.open(file_path) as pdf:
         pages_text = []
         tables: List[List[str]] = []
-        for page in pdf.pages:
+        for idx, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
-            pages_text.append(text)
+            # Add page marker to preserve page numbers in chunks
+            pages_text.append(f"<<PAGE_{idx}>>\n{text}")
             for table in page.extract_tables() or []:
                 flattened = [" | ".join(filter(None, row)) for row in table if any(row)]
                 if flattened:
@@ -64,16 +65,18 @@ def _extract_with_pdfplumber(file_path: Path) -> Tuple[str, List[List[str]]]:
 def _extract_with_pypdf(file_path: Path) -> str:
     reader = PdfReader(str(file_path))
     text_segments = []
-    for page in reader.pages:
-        text_segments.append(page.extract_text() or "")
+    for idx, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        text_segments.append(f"<<PAGE_{idx}>>\n{text}")
     return "\n".join(text_segments)
 
 
 def _extract_with_pymupdf(file_path: Path) -> str:
     document = fitz.open(file_path)
     text_segments = []
-    for page in document:
-        text_segments.append(page.get_text("text") or "")
+    for idx, page in enumerate(document, start=1):
+        text = page.get_text("text") or ""
+        text_segments.append(f"<<PAGE_{idx}>>\n{text}")
     return "\n".join(text_segments)
 
 

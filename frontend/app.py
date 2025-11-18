@@ -24,8 +24,13 @@ if "filename" not in st.session_state:
     st.session_state.filename = None
 if "last_metrics" not in st.session_state:
     st.session_state.last_metrics = {"latency_ms": 0, "retrieved": 0, "retrieval_accuracy": 0, "relevance_score": 0}
+if "history" not in st.session_state:
+    # history is a list of records: {name, doc_id, filename, pdf_bytes, messages, created_at}
+    st.session_state.history = []
 if "current_references" not in st.session_state:
     st.session_state.current_references = {}
+if "upload_key" not in st.session_state:
+    st.session_state.upload_key = 0
 
 # --- Custom CSS ---
 st.markdown("""
@@ -220,7 +225,12 @@ with st.sidebar:
     
     # File upload section
     st.markdown("<h3 style='color: white;'>📤 Upload PDF</h3>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("Choose a PDF file (max 20MB)", type=["pdf"], label_visibility="collapsed")
+    uploaded_file = st.file_uploader(
+        "Choose a PDF file (max 20MB)", 
+        type=["pdf"], 
+        label_visibility="collapsed",
+        key=f"file_uploader_{st.session_state.upload_key}"
+    )
     
     if uploaded_file is not None:
         file_bytes = uploaded_file.read()
@@ -282,14 +292,49 @@ with st.sidebar:
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-    
-    if st.button("🔄 New Session", use_container_width=True):
+
+    # New Session: save current session into history (if any) and clear
+    if st.button("🔄 New Session (Save)", use_container_width=True):
+        # Only save if there's something to save
+        if st.session_state.messages or st.session_state.pdf_bytes:
+            name = st.session_state.filename or f"session-{len(st.session_state.history)+1}"
+            record = {
+                "name": name,
+                "doc_id": st.session_state.doc_id,
+                "filename": st.session_state.filename,
+                "pdf_bytes": st.session_state.pdf_bytes,
+                "messages": st.session_state.messages.copy(),
+                "created_at": datetime.utcnow().isoformat(),
+            }
+            st.session_state.history.insert(0, record)
+        # clear current session
         st.session_state.doc_id = None
         st.session_state.extracted = False
         st.session_state.messages = []
         st.session_state.pdf_bytes = None
         st.session_state.filename = None
+        st.session_state.upload_key += 1  # Force file uploader to reset
         st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 📚 Saved Sessions / History")
+    if st.session_state.history:
+        # show latest first
+        for idx, rec in enumerate(st.session_state.history):
+            label = f"{rec.get('name') or rec.get('filename') or 'session'} — {rec.get('created_at')[:19]}"
+            if st.button(label, key=f"history_{idx}"):
+                # restore this session
+                st.session_state.doc_id = rec.get("doc_id")
+                st.session_state.filename = rec.get("filename")
+                st.session_state.pdf_bytes = rec.get("pdf_bytes")
+                st.session_state.messages = rec.get("messages", []).copy()
+                st.session_state.extracted = True
+                st.rerun()
+        if st.button("Clear All Saved Sessions", use_container_width=True, key="clear_all_history"):
+            st.session_state.history = []
+            st.rerun()
+    else:
+        st.info("No saved sessions yet. Start a chat and click 'New Session (Save)'.")
 
 # --- Main Content Area ---
 # Metrics bar at the top
@@ -332,16 +377,20 @@ with col1:
                     # Build references HTML
                     refs_html = ""
                     if references:
-                        refs_html = '<div class="references"><strong>📎 References:</strong> '
+                        ref_links = []
                         for ref in references:
                             page = ref.get("page", 1)
-                            refs_html += f'<a class="reference-link" href="#page{page}" onclick="return false;">Page {page}</a> '
-                        refs_html += '</div>'
+                            ref_links.append(f'<a class="reference-link" href="#page{page}" onclick="return false;">Page {page}</a>')
+                        refs_html = f'<div class="references"><strong>📎 References:</strong> {" ".join(ref_links)}</div>'
+                    
+                    # Escape content to prevent HTML injection
+                    import html
+                    safe_content = html.escape(content)
                     
                     st.markdown(f"""
                     <div class="chat-message assistant-message">
                         <div class="message-role">AI Assistant</div>
-                        <div class="message-content">{content}</div>
+                        <div class="message-content">{safe_content}</div>
                         {refs_html}
                     </div>
                     """, unsafe_allow_html=True)
@@ -368,6 +417,9 @@ with col1:
         else:
             # Add user message
             st.session_state.messages.append({"role": "user", "content": user_question.strip()})
+            # Clear the input by resetting the key
+            if "user_input" in st.session_state:
+                del st.session_state["user_input"]
             
             # Query backend
             with st.spinner("🤔 Thinking..."):
