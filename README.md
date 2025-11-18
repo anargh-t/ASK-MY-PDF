@@ -4,11 +4,12 @@ Retrieval-Augmented Generation product that parses PDFs, generates embeddings, s
 
 ![Architecture](docs/architecture.png)
 
-## Key Capabilities
-- **Model/Logic Layer:** Multi-pass PDF extraction (pypdf, pdfplumber, PyMuPDF), configurable chunking (500–1000 chars, overlap 100–150), LangChain-managed embeddings + FAISS retrieval, and pluggable LLM reasoning (OpenAI by default, Gemini or Hugging Face optional) with latency + retrieval metrics.
-- **Backend API Layer (FastAPI):** `/upload`, `/extract-text`, `/query`, and `/history` endpoints with validation, error handling, and history logging.
-- **Frontend UI (Streamlit):** Upload PDF, preview extracted text, chat with the document, send manual relevance feedback, and view previous queries.
-- **Security & Packaging:** Size/type validation, sanitized filenames, `.env` secrets, threat model, sprint plan, appendix artifacts, requirements, and documented folder structure.
+## Highlights
+- **LangChain RAG core:** pdfplumber/PyPDF extraction → LangChain text splitter → HuggingFace embeddings → FAISS (`langchain_community.vectorstores`) persisted under `models/langchain_index`.
+- **Pluggable LLM reasoning:** `LLM_PROVIDER=openai | gemini | huggingface`. Hugging Face requests flow through the router-compatible Chat API (defaults to `meta-llama/Meta-Llama-3-8B-Instruct`).
+- **FastAPI backend:** `/upload`, `/extract-text`, `/query`, `/history` with auto-indexing, validation, and error handling.
+- **Streamlit frontend:** Upload → Extract preview → Chat → Metrics + History, with manual relevance feedback.
+- **Docs & security:** STRIDE threat model, sprint artifacts, sanitized uploads, `.env`-driven secrets, and scripted asset generation.
 
 ## Repository Structure
 ```
@@ -20,8 +21,7 @@ ASK-MY-PDF/
 │   └── vector_store/    # (reserved for future adapters)
 ├── frontend/
 │   ├── app.py           # Streamlit UI
-│   ├── components/      # UI helpers
-│   └── (legacy static assets)
+│   └── components/
 ├── data/uploaded_files/ # Secure storage for uploads
 ├── models/              # Serialized FAISS index + metadata
 ├── docs/                # Architecture diagram, threat model, sprint plan, appendix
@@ -85,6 +85,11 @@ curl.exe -X POST http://localhost:8000/query ^
   -H "Content-Type: application/json" ^
   --data "{\"doc_id\":\"<id>\",\"question\":\"Summarize the executive brief\",\"top_k\":5}"
 ```
+
+### Hugging Face router tips
+- The router only serves chat-capable models. If you see `model_not_supported`, switch `HUGGINGFACE_MODEL` to a chat model (e.g. `meta-llama/Meta-Llama-3-8B-Instruct` or `google/gemma-2-9b-it`).
+- 410/404 errors usually mean the legacy `api-inference` host was hit; ensure `HUGGINGFACE_API_BASE=https://router.huggingface.co/v1`.
+- The router enforces strict rate limits; configure `LLM_MAX_TOKENS` conservatively.
 
 ## Evaluation Metrics
 - **Latency (ms):** Wall-clock duration per query, displayed in UI metrics and history log.
