@@ -129,6 +129,9 @@ class QueryRequest(BaseModel):
     relevance_score: Optional[float] = Field(
         default=None, ge=0.0, le=1.0, description="Optional manual rating supplied by the UI."
     )
+    conversation_history: Optional[List[Dict[str, str]]] = Field(
+        default=None, description="Previous conversation messages for context"
+    )
 
 
 class QueryResponse(BaseModel):
@@ -298,7 +301,7 @@ async def extract_text(payload: ExtractRequest):
 
     try:
         return process_document(record, payload.chunk_size, payload.overlap)
-    except (PDFValidationError, PDFExtractionError) as err:
+    except (PDFValidationError, PDFExtractionError, ValueError) as err:
         raise HTTPException(status_code=400, detail=str(err))
     except Exception as err:
         LOGGER.exception("Extraction failed: %s", err)
@@ -319,21 +322,41 @@ async def query_pdf(payload: QueryRequest):
         raise HTTPException(status_code=500, detail="Unable to prepare document for querying.")
 
     try:
+        # Convert conversation history to list of tuples if provided
+        conversation_history = None
+        if payload.conversation_history:
+            conversation_history = [
+                (msg.get("role", "user"), msg.get("content", ""))
+                for msg in payload.conversation_history
+                if msg.get("content", "").strip()
+            ]
+        
         answer, chunks, metrics = pipeline.query(
             doc_id=payload.doc_id,
             question=payload.question,
             top_k=payload.top_k,
+            conversation_history=conversation_history,
         )
     except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err))
+        error_msg = str(err)
+        LOGGER.error(f"Query validation error: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as err:
+        error_msg = f"Query pipeline failed: {str(err)}"
         LOGGER.exception("Query failed: %s", err)
-        raise HTTPException(status_code=500, detail="Query pipeline failed.")
+        # Provide more specific error message
+        if "LLM" in str(err) or "API" in str(err) or "key" in str(err).lower():
+            error_msg = f"LLM service error: {str(err)}. Please check your API keys and LLM provider configuration."
+        raise HTTPException(status_code=500, detail=error_msg)
 
     metrics_dict = asdict(metrics)
-    if payload.relevance_score is not None and pipeline.history:
-        pipeline.history[-1]["metrics"]["relevance_score"] = payload.relevance_score
-        metrics_dict["relevance_score"] = payload.relevance_score
+    # Ensure relevance_score is always a float for Pydantic validation
+    if payload.relevance_score is not None:
+        metrics_dict["relevance_score"] = float(payload.relevance_score)
+        if pipeline.history:
+            pipeline.history[-1]["metrics"]["relevance_score"] = payload.relevance_score
+    else:
+        metrics_dict["relevance_score"] = float(metrics_dict.get("relevance_score") or 0.0)
 
     return QueryResponse(
         answer=answer,

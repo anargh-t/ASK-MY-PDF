@@ -1,6 +1,6 @@
 # ASK MY PDF – AI PDF Assistant
 
-Retrieval-Augmented Generation product that parses PDFs, generates embeddings, stores them in a local FAISS index, and exposes secured APIs plus a Streamlit UI for conversational querying.
+Retrieval-Augmented Generation product that parses PDFs, generates embeddings, stores them in a local FAISS index, and exposes secured APIs plus a Flask UI for conversational querying.
 
 ![Architecture](docs/architecture.png)
 
@@ -8,7 +8,7 @@ Retrieval-Augmented Generation product that parses PDFs, generates embeddings, s
 - **LangChain RAG core:** pdfplumber/PyPDF extraction → LangChain text splitter → HuggingFace embeddings → FAISS (`langchain_community.vectorstores`) persisted under `models/langchain_index`.
 - **Pluggable LLM reasoning:** `LLM_PROVIDER=openai | gemini | huggingface`. Hugging Face requests flow through the router-compatible Chat API (defaults to `meta-llama/Meta-Llama-3-8B-Instruct`).
 - **FastAPI backend:** `/upload`, `/extract-text`, `/query`, `/history` with auto-indexing, validation, and error handling.
-- **Streamlit frontend:** Upload → Extract preview → Chat → Metrics + History, with manual relevance feedback.
+- **Flask frontend:** Modern, responsive web UI with drag-and-drop upload, real-time chat, PDF preview, and comprehensive metrics dashboard.
 - **Docs & security:** STRIDE threat model, sprint artifacts, sanitized uploads, `.env`-driven secrets, and scripted asset generation.
 
 ## Repository Structure
@@ -20,8 +20,9 @@ ASK-MY-PDF/
 │   ├── rag.py           # Chunking, embeddings, FAISS pipeline
 │   └── vector_store/    # (reserved for future adapters)
 ├── frontend/
-│   ├── app.py           # Streamlit UI
-│   └── components/
+│   ├── app.py           # Flask application
+│   ├── templates/       # HTML templates
+│   └── static/          # CSS and JavaScript files
 ├── data/uploaded_files/ # Secure storage for uploads
 ├── models/              # Serialized FAISS index + metadata
 ├── docs/                # Architecture diagram, threat model, sprint plan, appendix
@@ -60,11 +61,12 @@ ASK-MY-PDF/
    ```bash
    uvicorn backend.main:app --reload --port 8000
    ```
-5. **Run Streamlit UI**
+5. **Run Flask UI**
    ```bash
    cd frontend
-   streamlit run app.py
+   python app.py
    ```
+   The Flask app will be available at `http://localhost:5000`
 
 ## API Reference
 | Endpoint | Method | Description |

@@ -1,471 +1,408 @@
-import streamlit as st
-
-st.set_page_config(page_title="ASK MY PDF", layout="wide", initial_sidebar_state="expanded")
-
-import base64
 import os
-from datetime import datetime
-from io import BytesIO
-
+import base64
+from flask import Flask, render_template, request, jsonify, session, send_file
+from werkzeug.utils import secure_filename
 import requests
+from datetime import datetime
+import uuid
+from pathlib import Path
+
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20MB max file size
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-# --- Session state initialization ---
-if "doc_id" not in st.session_state:
-    st.session_state.doc_id = None
-if "extracted" not in st.session_state:
-    st.session_state.extracted = False
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "pdf_bytes" not in st.session_state:
-    st.session_state.pdf_bytes = None
-if "filename" not in st.session_state:
-    st.session_state.filename = None
-if "last_metrics" not in st.session_state:
-    st.session_state.last_metrics = {"latency_ms": 0, "retrieved": 0, "retrieval_accuracy": 0, "relevance_score": 0}
-if "history" not in st.session_state:
-    # history is a list of records: {name, doc_id, filename, pdf_bytes, messages, created_at}
-    st.session_state.history = []
-if "current_references" not in st.session_state:
-    st.session_state.current_references = {}
-if "upload_key" not in st.session_state:
-    st.session_state.upload_key = 0
-
-# --- Custom CSS ---
-st.markdown("""
-<style>
-    /* Hide default Streamlit elements */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    /* Main container */
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 0rem;
-        max-width: 100%;
-    }
-    
-    /* Metrics bar styling */
-    .metrics-container {
-        background: #2C3E50;
-        padding: 0.5rem 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-        display: flex;
-        gap: 1.5rem;
-        align-items: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    
-    .metric-item {
-        color: white;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-    
-    .metric-value {
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-left: 0.3rem;
-    }
-    
-    /* Chat message styling */
-    .chat-message {
-        padding: 1rem;
-        border-radius: 15px;
-        margin-bottom: 1rem;
-        display: flex;
-        flex-direction: column;
-        max-width: 80%;
-        word-wrap: break-word;
-    }
-    
-    .user-message {
-        background: #25D366;
-        color: white;
-        margin-left: auto;
-        border-bottom-right-radius: 5px;
-    }
-    
-    .assistant-message {
-        background: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        color: #333;
-        margin-right: auto;
-        border-bottom-left-radius: 5px;
-    }
-    
-    .references {
-        margin-top: 0.5rem;
-        padding-top: 0.5rem;
-        border-top: 1px solid #E0E0E0;
-        font-size: 0.8rem;
-    }
-    
-    .reference-link {
-        display: inline-block;
-        background: #F0F0F0;
-        padding: 0.2rem 0.5rem;
-        margin: 0.2rem 0.2rem 0.2rem 0;
-        border-radius: 5px;
-        color: #2C3E50;
-        text-decoration: none;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    
-    .reference-link:hover {
-        background: #2C3E50;
-        color: white;
-    }
-    
-    .message-role {
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-bottom: 0.3rem;
-        opacity: 0.7;
-    }
-    
-    .message-content {
-        font-size: 0.95rem;
-        line-height: 1.5;
-    }
-    
-    /* PDF viewer styling */
-    .pdf-container {
-        border: 2px solid #E0E0E0;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    
-    /* Sidebar styling */
-    [data-testid="stSidebar"] {
-        background: #34495E !important;
-    }
-    
-    [data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] .stButton>button {
-        background: rgba(255, 255, 255, 0.2);
-        color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    
-    [data-testid="stSidebar"] .stButton>button:hover {
-        background: rgba(255, 255, 255, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.5);
-    }
-    
-    [data-testid="stSidebar"] .stMarkdown {
-        color: white !important;
-    }
-    
-    [data-testid="stSidebar"] hr {
-        border-color: rgba(255, 255, 255, 0.3) !important;
-    }
-    
-    /* Button styling */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    /* Input styling */
-    .stTextInput>div>div>input {
-        border-radius: 20px;
-        border: 2px solid #E0E0E0;
-        padding: 0.5rem 1rem;
-    }
-    
-    /* Chat container */
-    .chat-container {
-        height: 500px;
-        overflow-y: auto;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session defaults
+@app.before_request
+def init_session():
+    if 'doc_id' not in session:
+        session['doc_id'] = None
+    if 'extracted' not in session:
+        session['extracted'] = False
+    if 'messages' not in session:
+        session['messages'] = []
+    if 'filename' not in session:
+        session['filename'] = None
+    if 'history' not in session:
+        session['history'] = []
+    if 'last_metrics' not in session:
+        session['last_metrics'] = {
+            'latency_ms': 0,
+            'retrieved': 0,
+            'retrieval_accuracy': 0,
+            'relevance_score': 0
+        }
 
 
-def display_pdf(pdf_bytes):
-    """Display PDF using base64 encoding in iframe"""
-    if pdf_bytes:
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-        st.markdown(f'<div class="pdf-container">{pdf_display}</div>', unsafe_allow_html=True)
-
-
-# --- Sidebar ---
-with st.sidebar:
-    st.markdown("<h1 style='color: white; text-align: center;'>📄 ASK MY PDF</h1>", unsafe_allow_html=True)
-    st.markdown("---")
-    
-    # Backend status
+@app.route('/')
+def index():
+    """Main page"""
+    # Check backend status
+    backend_status = {'connected': False, 'documents': 0, 'history': 0}
     try:
-        status = requests.get(f"{BACKEND_URL}/", timeout=5).json()
-        st.success(f"✅ Backend Connected")
-        st.markdown(f"<p style='color: white; font-size: 0.85rem;'>Documents indexed: {status.get('documents', 0)}</p>", unsafe_allow_html=True)
-    except Exception as e:
-        st.error("❌ Backend Offline")
-        st.markdown(f"<p style='color: white; font-size: 0.85rem;'>Make sure backend is running on port 8000</p>", unsafe_allow_html=True)
-        st.stop()
+        response = requests.get(f"{BACKEND_URL}/", timeout=5)
+        if response.status_code == 200:
+            try:
+                backend_status = response.json()
+                backend_status['connected'] = True
+            except ValueError:
+                backend_status['connected'] = False
+    except requests.exceptions.ConnectionError:
+        backend_status['connected'] = False
+        backend_status['error'] = 'Cannot connect to backend'
+    except Exception:
+        backend_status['connected'] = False
     
-    st.markdown("---")
+    # Get PDF URL if doc_id exists
+    pdf_url = None
+    if session.get('doc_id'):
+        pdf_url = f"/api/pdf/{session.get('doc_id')}"
     
-    # File upload section
-    st.markdown("<h3 style='color: white;'>📤 Upload PDF</h3>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader(
-        "Choose a PDF file (max 20MB)", 
-        type=["pdf"], 
-        label_visibility="collapsed",
-        key=f"file_uploader_{st.session_state.upload_key}"
-    )
+    return render_template('index.html', 
+                         backend_status=backend_status,
+                         doc_id=session.get('doc_id'),
+                         extracted=session.get('extracted', False),
+                         filename=session.get('filename'),
+                         messages=session.get('messages', []),
+                         history=session.get('history', []),
+                         metrics=session.get('last_metrics', {}),
+                         pdf_url=pdf_url,
+                         backend_url=BACKEND_URL)
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    """Handle file upload"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
     
-    if uploaded_file is not None:
-        file_bytes = uploaded_file.read()
-        st.session_state.pdf_bytes = file_bytes
-        st.session_state.filename = uploaded_file.name
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Only PDF files are allowed'}), 400
+    
+    try:
+        # Read file content
+        file_content = file.read()
+        file.seek(0)  # Reset file pointer for potential reuse
         
         # Upload to backend
-        with st.spinner("Uploading..."):
+        response = requests.post(
+            f"{BACKEND_URL}/upload",
+            files={'file': (file.filename, file_content, 'application/pdf')},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
             try:
-                response = requests.post(
-                    f"{BACKEND_URL}/upload",
-                    files={"file": (uploaded_file.name, file_bytes, "application/pdf")},
-                )
-                if response.status_code == 200:
-                    payload = response.json()
-                    st.session_state.doc_id = payload["doc_id"]
-                    st.success(f"✅ {payload['filename']} ({payload['size_mb']} MB)")
-                else:
-                    st.error(response.json().get("detail", "Upload failed"))
-            except Exception as e:
-                st.error(f"Upload error: {str(e)}")
-    
-    # Extract & Build Index button - shown right after upload
-    if st.session_state.doc_id:
-        chunk_size = 500
-        overlap = 100
-        if st.button("🔨 Extract & Build Index", use_container_width=True, type="primary"):
-            with st.spinner("Extracting and indexing..."):
-                try:
-                    resp = requests.post(
-                        f"{BACKEND_URL}/extract-text",
-                        json={
-                            "doc_id": st.session_state.doc_id,
-                            "chunk_size": chunk_size,
-                            "overlap": overlap,
-                        },
-                    )
-                    if resp.status_code == 200:
-                        st.session_state.extracted = True
-                        data = resp.json()
-                        st.success(f"✅ Indexed {data.get('chunks_indexed', 0)} chunks")
-                    else:
-                        st.error(resp.json().get("detail", "Extraction failed"))
-                except Exception as e:
-                    st.error(f"Extraction error: {str(e)}")
-    
-    st.markdown("---")
-    
-    # Advanced Settings
-    with st.expander("⚙️ Advanced Settings", expanded=False):
-        chunk_size = st.slider("Chunk size", 200, 1500, 500, 50)
-        overlap = st.slider("Chunk overlap", 50, 400, 100, 10)
-        top_k = st.number_input("Top-K chunks", 1, 20, 5, 1)
-        manual_relevance = st.slider("Manual relevance feedback", 0.0, 1.0, 0.5, 0.1)
-    
-    st.markdown("---")
-    
-    # Chat history management
-    if st.button("🗑️ Clear Chat History", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
-
-    # New Session: save current session into history (if any) and clear
-    if st.button("🔄 New Session (Save)", use_container_width=True):
-        # Only save if there's something to save
-        if st.session_state.messages or st.session_state.pdf_bytes:
-            name = st.session_state.filename or f"session-{len(st.session_state.history)+1}"
-            record = {
-                "name": name,
-                "doc_id": st.session_state.doc_id,
-                "filename": st.session_state.filename,
-                "pdf_bytes": st.session_state.pdf_bytes,
-                "messages": st.session_state.messages.copy(),
-                "created_at": datetime.utcnow().isoformat(),
-            }
-            st.session_state.history.insert(0, record)
-        # clear current session
-        st.session_state.doc_id = None
-        st.session_state.extracted = False
-        st.session_state.messages = []
-        st.session_state.pdf_bytes = None
-        st.session_state.filename = None
-        st.session_state.upload_key += 1  # Force file uploader to reset
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("#### 📚 Saved Sessions / History")
-    if st.session_state.history:
-        # show latest first
-        for idx, rec in enumerate(st.session_state.history):
-            label = f"{rec.get('name') or rec.get('filename') or 'session'} — {rec.get('created_at')[:19]}"
-            if st.button(label, key=f"history_{idx}"):
-                # restore this session
-                st.session_state.doc_id = rec.get("doc_id")
-                st.session_state.filename = rec.get("filename")
-                st.session_state.pdf_bytes = rec.get("pdf_bytes")
-                st.session_state.messages = rec.get("messages", []).copy()
-                st.session_state.extracted = True
-                st.rerun()
-        if st.button("Clear All Saved Sessions", use_container_width=True, key="clear_all_history"):
-            st.session_state.history = []
-            st.rerun()
-    else:
-        st.info("No saved sessions yet. Start a chat and click 'New Session (Save)'.")
-
-# --- Main Content Area ---
-# Metrics bar at the top
-metrics = st.session_state.last_metrics
-st.markdown(f"""
-<div class="metrics-container">
-    <div class="metric-item">⚡ Latency: <span class="metric-value">{metrics.get('latency_ms', 0):.0f} ms</span></div>
-    <div class="metric-item">📦 Chunks: <span class="metric-value">{metrics.get('retrieved', 0)}</span></div>
-    <div class="metric-item">🎯 Accuracy: <span class="metric-value">{metrics.get('retrieval_accuracy', 0):.2f}</span></div>
-    <div class="metric-item">⭐ Relevance: <span class="metric-value">{metrics.get('relevance_score', 0):.2f}</span></div>
-</div>
-""", unsafe_allow_html=True)
-
-# Two column layout: Chat on left, PDF preview on right
-col1, col2 = st.columns([1.5, 1])
-
-with col1:
-    st.subheader("💬 Chat with Your PDF")
-    
-    # Chat container
-    chat_container = st.container()
-    
-    with chat_container:
-        if not st.session_state.messages:
-            st.info("👋 Upload a PDF, extract it, and start asking questions!")
+                data = response.json()
+                session['doc_id'] = data['doc_id']
+                session['filename'] = data['filename']
+                session['extracted'] = False
+                session['messages'] = []
+                return jsonify(data)
+            except ValueError:
+                return jsonify({'error': 'Invalid response from backend'}), 500
         else:
-            for idx, message in enumerate(st.session_state.messages):
-                role = message["role"]
-                content = message["content"]
-                references = message.get("references", [])
+            try:
+                error = response.json().get('detail', 'Upload failed')
+            except ValueError:
+                error = f'Upload failed with status {response.status_code}'
+            return jsonify({'error': error}), response.status_code
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'Cannot connect to backend. Make sure it is running on port 8000'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Backend request timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Backend connection error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
+
+@app.route('/api/extract', methods=['POST'])
+def extract_text():
+    """Extract and index PDF text"""
+    data = request.json
+    doc_id = data.get('doc_id') or session.get('doc_id')
+    
+    if not doc_id:
+        return jsonify({'error': 'No document uploaded'}), 400
+    
+    chunk_size = data.get('chunk_size', 500)
+    overlap = data.get('overlap', 100)
+    
+    try:
+        response = requests.post(
+            f"{BACKEND_URL}/extract-text",
+            json={
+                'doc_id': doc_id,
+                'chunk_size': chunk_size,
+                'overlap': overlap
+            },
+            timeout=120
+        )
+        
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                session['extracted'] = True
+                return jsonify(result)
+            except ValueError:
+                return jsonify({'error': 'Invalid response from backend'}), 500
+        else:
+            try:
+                error = response.json().get('detail', 'Extraction failed')
+            except ValueError:
+                error = f'Extraction failed with status {response.status_code}'
+            return jsonify({'error': error}), response.status_code
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': 'Cannot connect to backend. Make sure it is running on port 8000'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Backend request timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Backend connection error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Extraction error: {str(e)}'}), 500
+
+
+@app.route('/api/query', methods=['POST'])
+def query_pdf():
+    """Query the PDF"""
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.json or {}
+    doc_id = data.get('doc_id') or session.get('doc_id')
+    question = data.get('question', '').strip()
+    
+    if not doc_id:
+        return jsonify({'error': 'No document uploaded'}), 400
+    
+    if not question:
+        return jsonify({'error': 'Question is required'}), 400
+    
+    # Check if extracted - but allow query even if session says not extracted
+    # (backend will auto-index if needed)
+    top_k = data.get('top_k', 5)
+    relevance_score = data.get('relevance_score')
+    
+    try:
+        # Log request details
+        print(f"Query request - doc_id: {doc_id}, question: {question[:50]}..., top_k: {top_k}")
+        
+        # Get conversation history from session (last 10 messages for context)
+        conversation_history = []
+        if 'messages' in session and session['messages']:
+            # Get last 10 messages (5 exchanges) for context
+            recent_messages = session['messages'][-10:]
+            conversation_history = [
+                {'role': msg.get('role', 'user'), 'content': msg.get('content', '')}
+                for msg in recent_messages
+            ]
+        
+        response = requests.post(
+            f"{BACKEND_URL}/query",
+            json={
+                'doc_id': doc_id,
+                'question': question,
+                'top_k': top_k,
+                'relevance_score': relevance_score,
+                'conversation_history': conversation_history if conversation_history else None
+            },
+            timeout=60,
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        # Log response for debugging
+        print(f"Backend response status: {response.status_code}")
+        print(f"Backend response headers: {dict(response.headers)}")
+        
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                print(f"Backend response data keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
                 
-                if role == "user":
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                        <div class="message-role" style="color: white;">You</div>
-                        <div class="message-content" style="color: white;">{content}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    # Build references HTML
-                    refs_html = ""
-                    if references:
-                        ref_links = []
-                        for ref in references:
-                            page = ref.get("page", 1)
-                            ref_links.append(f'<a class="reference-link" href="#page{page}" onclick="return false;">Page {page}</a>')
-                        refs_html = f'<div class="references"><strong>📎 References:</strong> {" ".join(ref_links)}</div>'
-                    
-                    # Escape content to prevent HTML injection
-                    import html
-                    safe_content = html.escape(content)
-                    
-                    st.markdown(f"""
-                    <div class="chat-message assistant-message">
-                        <div class="message-role">AI Assistant</div>
-                        <div class="message-content">{safe_content}</div>
-                        {refs_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-    
-    # Chat input at the bottom
-    st.markdown("---")
-    user_question = st.text_input("Ask a question about your PDF:", key="user_input", placeholder="What is this document about?")
-    
-    col_send, col_clear = st.columns([4, 1])
-    
-    with col_send:
-        send_button = st.button("📤 Send", use_container_width=True, type="primary")
-    
-    with col_clear:
-        if st.button("🗑️", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-    
-    if send_button and user_question.strip():
-        if not st.session_state.doc_id:
-            st.error("⚠️ Please upload a PDF first")
-        elif not st.session_state.extracted:
-            st.error("⚠️ Please extract and index the PDF first (check Advanced Settings)")
+                # Mark as extracted if query succeeds
+                session['extracted'] = True
+                session['doc_id'] = doc_id
+                
+                # Add messages to session
+                if 'messages' not in session:
+                    session['messages'] = []
+                
+                session['messages'].append({
+                    'role': 'user',
+                    'content': question,
+                    'timestamp': datetime.utcnow().isoformat()
+                })
+                
+                session['messages'].append({
+                    'role': 'assistant',
+                    'content': result.get('answer', ''),
+                    'references': result.get('references', []),
+                    'timestamp': datetime.utcnow().isoformat()
+                })
+                
+                # Update metrics
+                if 'metrics' in result:
+                    session['last_metrics'] = result['metrics']
+                
+                # Ensure result includes doc_id
+                result['doc_id'] = doc_id
+                
+                return jsonify(result)
+            except ValueError as e:
+                print(f"JSON parsing error: {e}")
+                print(f"Response text: {response.text[:500]}")
+                return jsonify({'error': f'Invalid response from backend: {str(e)}'}), 500
         else:
-            # Add user message
-            st.session_state.messages.append({"role": "user", "content": user_question.strip()})
-            # Clear the input by resetting the key
-            if "user_input" in st.session_state:
-                del st.session_state["user_input"]
-            
-            # Query backend
-            with st.spinner("🤔 Thinking..."):
-                try:
-                    top_k = st.session_state.get("top_k", 5) if "top_k" in st.session_state else 5
-                    manual_relevance = st.session_state.get("manual_relevance", 0.5) if "manual_relevance" in st.session_state else 0.5
-                    
-                    resp = requests.post(
-                        f"{BACKEND_URL}/query",
-                        json={
-                            "doc_id": st.session_state.doc_id,
-                            "question": user_question.strip(),
-                            "top_k": top_k,
-                            "relevance_score": manual_relevance,
-                        },
-                    )
-                    
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        answer = data.get("answer", "No answer generated")
-                        references = data.get("references", [])
-                        
-                        # Add assistant message with references
-                        st.session_state.messages.append({
-                            "role": "assistant", 
-                            "content": answer,
-                            "references": references
-                        })
-                        
-                        # Update metrics
-                        st.session_state.last_metrics = data.get("metrics", {})
-                        
-                        st.rerun()
-                    else:
-                        error_msg = resp.json().get("detail", "Query failed")
-                        st.error(f"❌ {error_msg}")
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+            try:
+                error_data = response.json()
+                error = error_data.get('detail', 'Query failed')
+                print(f"Backend error (JSON): {error}")
+            except ValueError:
+                error_text = response.text[:500] if response.text else 'No response body'
+                error = f'Query failed with status {response.status_code}. Response: {error_text}'
+                print(f"Backend error (non-JSON): {error}")
 
-with col2:
-    st.subheader("📄 PDF Preview")
+            # If backend lost the document (e.g., after restart) reset session
+            if response.status_code == 404 and "Document not found" in error:
+                session['doc_id'] = None
+                session['extracted'] = False
+                session['messages'] = []
+                session['filename'] = None
+                session['last_metrics'] = {
+                    'latency_ms': 0,
+                    'retrieved': 0,
+                    'retrieval_accuracy': 0,
+                    'relevance_score': 0
+                }
+                error = "Document not found on server. Please re-upload and extract your PDF."
+
+            return jsonify({'error': error}), response.status_code
+    except requests.exceptions.ConnectionError as e:
+        print(f"Connection error: {e}")
+        return jsonify({'error': 'Cannot connect to backend. Make sure it is running on port 8000'}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({'error': 'Backend request timed out'}), 504
+    except requests.exceptions.RequestException as e:
+        print(f"Request exception: {e}")
+        return jsonify({'error': f'Backend connection error: {str(e)}'}), 500
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Query error: {str(e)}'}), 500
+
+
+@app.route('/api/history', methods=['GET'])
+def get_history():
+    """Get query history from backend"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/history", timeout=5)
+        if response.status_code == 200:
+            return jsonify(response.json())
+        return jsonify({'history': []})
+    except:
+        return jsonify({'history': []})
+
+
+@app.route('/api/clear', methods=['POST'])
+def clear_session():
+    """Clear current session"""
+    session['messages'] = []
+    session['last_metrics'] = {
+        'latency_ms': 0,
+        'retrieved': 0,
+        'retrieval_accuracy': 0,
+        'relevance_score': 0
+    }
+    return jsonify({'success': True})
+
+
+@app.route('/api/new-session', methods=['POST'])
+def new_session():
+    """Save current session and start new one"""
+    # Save to history if there's content
+    if session.get('messages') or session.get('doc_id'):
+        history_entry = {
+            'id': str(uuid.uuid4()),
+            'name': session.get('filename') or f'Session {len(session.get("history", [])) + 1}',
+            'doc_id': session.get('doc_id'),
+            'filename': session.get('filename'),
+            'messages': session.get('messages', []).copy(),
+            'created_at': datetime.utcnow().isoformat()
+        }
+        if 'history' not in session:
+            session['history'] = []
+        session['history'].insert(0, history_entry)
     
-    if st.session_state.pdf_bytes:
-        st.caption(f"**{st.session_state.filename}**")
-        display_pdf(st.session_state.pdf_bytes)
-    else:
-        st.info("📂 No PDF uploaded yet. Upload a file from the sidebar to preview it here.")
-        st.image("https://via.placeholder.com/400x600/EFEFEF/666666?text=PDF+Preview", width=400)
+    # Clear current session
+    session['doc_id'] = None
+    session['extracted'] = False
+    session['messages'] = []
+    session['filename'] = None
+    
+    return jsonify({'success': True, 'history': session.get('history', [])})
 
+
+@app.route('/api/load-session', methods=['POST'])
+def load_session():
+    """Load a saved session"""
+    data = request.json
+    session_id = data.get('session_id')
+    
+    if not session_id or 'history' not in session:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Find session in history
+    history = session.get('history', [])
+    saved_session = next((s for s in history if s.get('id') == session_id), None)
+    
+    if not saved_session:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Restore session
+    session['doc_id'] = saved_session.get('doc_id')
+    session['filename'] = saved_session.get('filename')
+    session['messages'] = saved_session.get('messages', []).copy()
+    session['extracted'] = True  # Assume extracted if it was saved
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/pdf/<doc_id>')
+def get_pdf(doc_id):
+    """Serve PDF file by doc_id"""
+    try:
+        # Find PDF file in upload directory
+        # Backend stores files as {uuid}_{filename}, so we need to search
+        upload_dir = Path(__file__).resolve().parent.parent / "data" / "uploaded_files"
+        
+        # Get filename from session if available
+        filename = session.get('filename')
+        if filename:
+            # Try to find file with this filename (most recent match)
+            pdf_files = sorted(upload_dir.glob(f"*_{filename}"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if pdf_files:
+                return send_file(pdf_files[0], mimetype='application/pdf')
+        
+        # Fallback: try to find any PDF (this is less precise but works)
+        pdf_files = sorted(upload_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if pdf_files:
+            # Return most recent PDF as fallback
+            return send_file(pdf_files[0], mimetype='application/pdf')
+        
+        return jsonify({'error': 'PDF not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5000))
+    debug = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)

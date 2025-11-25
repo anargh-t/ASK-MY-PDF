@@ -33,28 +33,38 @@ class QueryMetrics:
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> List[Chunk]:
     import re
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=overlap,
         separators=["\n\n", "\n", " ", ""],
     )
     chunks: List[Chunk] = []
+    current_page = 1
+
     for idx, segment in enumerate(splitter.split_text(text)):
-        if segment.strip():
-            # Extract page number from marker if present
-            page_match = re.search(r'<<PAGE_(\d+)>>', segment)
-            page_num = int(page_match.group(1)) if page_match else idx + 1
-            # Remove page markers from text
-            clean_text = re.sub(r'<<PAGE_\d+>>\s*', '', segment).strip()
-            if clean_text:
-                chunks.append(
-                    Chunk(
-                        id=str(uuid.uuid4()),
-                        doc_id="",
-                        text=clean_text,
-                        page=page_num,
-                    )
+        if not segment.strip():
+            continue
+
+        page_markers = re.findall(r'<<PAGE_(\d+)>>', segment)
+        if page_markers:
+            # Use the first marker as the chunk's page and update the tracker to the last seen marker
+            page_num = int(page_markers[0])
+            current_page = int(page_markers[-1])
+        else:
+            page_num = current_page or (idx + 1)
+
+        clean_text = re.sub(r'<<PAGE_\d+>>\s*', '', segment).strip()
+        if clean_text:
+            chunks.append(
+                Chunk(
+                    id=str(uuid.uuid4()),
+                    doc_id="",
+                    text=clean_text,
+                    page=page_num,
                 )
+            )
+
     return chunks
 
 
@@ -73,18 +83,18 @@ class RAGPipeline:
         self.embedding_model = HuggingFaceEmbeddings(model_name=model_name)
         self.vector_store: Optional[LCFAISS] = self._load_vector_store()
         self.llm = llm
-        self.prompt = ChatPromptTemplate.from_messages(
+        # Base prompt template - will be modified for conversation history
+        self.base_prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
                     "You are an AI PDF analyst. Answer strictly using the provided context. "
                     "If the answer is missing, reply with 'I need more information.'\nContext:\n{context}",
                 ),
-                ("user", "{question}"),
             ]
         )
         self.output_parser = StrOutputParser()
-        self.chain = self.prompt | self.llm | self.output_parser
+        # Chain will be built dynamically based on conversation history
         self.documents: Dict[str, Dict] = self._load_documents()
         self.history: List[Dict] = []
 
@@ -134,6 +144,13 @@ class RAGPipeline:
     ) -> Dict:
         doc_id = (doc_id or str(uuid.uuid4())).strip()
         chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+        chunks = [chunk for chunk in chunks if chunk.text.strip()]
+
+        if not chunks:
+            raise ValueError(
+                "No text chunks were generated from this PDF. "
+                "Please ensure the document contains machine-readable text."
+            )
         for chunk in chunks:
             chunk.doc_id = doc_id
 
@@ -162,25 +179,66 @@ class RAGPipeline:
 
         return {"doc_id": doc_id, "chunks": len(chunks)}
 
-    def query(self, doc_id: str, question: str, top_k: int = 5) -> Tuple[str, List[Dict], QueryMetrics]:
+    def query(self, doc_id: str, question: str, top_k: int = 5, conversation_history: Optional[List[Tuple[str, str]]] = None) -> Tuple[str, List[Dict], QueryMetrics]:
         if self.vector_store is None:
             raise ValueError("No documents indexed yet. Please extract a PDF first.")
 
         doc_id = doc_id.strip()
         doc_metadata = self.documents.get(doc_id)
         if not doc_metadata:
-            raise ValueError("Document not found. Extract text before querying.")
+            raise ValueError(f"Document {doc_id} not found in index. Extract text before querying.")
 
         start = time.perf_counter()
-        search_results = self.vector_store.similarity_search_with_score(question, k=top_k * 4)
+        
+        try:
+            search_results = self.vector_store.similarity_search_with_score(question, k=top_k * 4)
+        except Exception as e:
+            LOGGER.error(f"Vector search failed: {e}", exc_info=True)
+            raise ValueError(f"Vector search failed: {str(e)}")
+        
         filtered = [
             {"text": doc.page_content, "metadata": doc.metadata, "score": score}
             for doc, score in search_results
             if doc.metadata.get("doc_id") == doc_id
         ][:top_k]
+        
+        if not filtered:
+            LOGGER.warning(f"No chunks found for doc_id {doc_id} in search results")
 
         context = "\n\n".join(item["text"] for item in filtered) or "No relevant context found."
-        response = self.chain.invoke({"context": context, "question": question}).strip()
+        
+        # Build messages list with conversation history
+        messages = [
+            (
+                "system",
+                "You are an AI PDF analyst. Answer strictly using the provided context. "
+                "If the answer is missing, reply with 'I need more information.'\nContext:\n{context}"
+            )
+        ]
+        
+        # Add conversation history (last 5 exchanges to avoid token limits)
+        if conversation_history:
+            # Take last 5 exchanges (10 messages: 5 user + 5 assistant)
+            recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
+            for role, content in recent_history:
+                # Map roles: 'user' -> 'user', 'assistant' -> 'assistant'
+                if role in ['user', 'assistant']:
+                    messages.append((role, content))
+        
+        # Add current question
+        messages.append(("user", question))
+        
+        # Create dynamic prompt with conversation history
+        try:
+            prompt = ChatPromptTemplate.from_messages(messages)
+            chain = prompt | self.llm | self.output_parser
+            
+            # Invoke with context
+            response = chain.invoke({"context": context}).strip()
+        except Exception as e:
+            LOGGER.error(f"LLM chain invocation failed: {e}", exc_info=True)
+            raise ValueError(f"Failed to generate answer from LLM: {str(e)}")
+        
         latency_ms = (time.perf_counter() - start) * 1000
 
         metrics = QueryMetrics(

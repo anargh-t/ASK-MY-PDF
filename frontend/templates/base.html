@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ASK MY PDF - AI PDF Assistant{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>📄 ASK MY PDF</h1>
+                <p class="subtitle">AI-Powered PDF Assistant</p>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- Backend Status -->
+                <div class="status-card" id="backend-status">
+                    {% if backend_status.connected %}
+                    <div class="status-indicator status-online"></div>
+                    <span>Backend Connected</span>
+                    <small>{{ backend_status.documents }} documents indexed</small>
+                    {% else %}
+                    <div class="status-indicator status-offline"></div>
+                    <span>Backend Offline</span>
+                    <small>Make sure backend is running</small>
+                    {% endif %}
+                </div>
+
+                <!-- File Upload Section -->
+                <div class="upload-section">
+                    <h3>📤 Upload PDF</h3>
+                    <div class="upload-area" id="upload-area">
+                        <input type="file" id="file-input" accept=".pdf" style="display: none;">
+                        <div class="upload-placeholder">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p>Click to upload PDF</p>
+                            <small>Max 20MB</small>
+                        </div>
+                        <div class="upload-progress" id="upload-progress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progress-fill"></div>
+                            </div>
+                            <span id="upload-status">Uploading...</span>
+                        </div>
+                    </div>
+                    <div id="file-info" class="file-info" style="display: none;">
+                        <div class="file-details">
+                            <span class="file-name" id="file-name"></span>
+                            <span class="file-size" id="file-size"></span>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" id="remove-file">Remove</button>
+                    </div>
+                </div>
+
+                <!-- Extract Button -->
+                <div id="extract-section" style="display: none;">
+                    <button class="btn btn-primary btn-block" id="extract-btn">
+                        🔨 Extract & Build Index
+                    </button>
+                </div>
+
+                <!-- Advanced Settings -->
+                <div class="settings-section">
+                    <details class="settings-details">
+                        <summary>⚙️ Advanced Settings</summary>
+                        <div class="settings-content">
+                            <div class="setting-item">
+                                <label for="chunk-size">Chunk Size</label>
+                                <input type="range" id="chunk-size" min="200" max="1500" value="500" step="50">
+                                <span class="setting-value" id="chunk-size-value">500</span>
+                            </div>
+                            <div class="setting-item">
+                                <label for="chunk-overlap">Chunk Overlap</label>
+                                <input type="range" id="chunk-overlap" min="50" max="400" value="100" step="10">
+                                <span class="setting-value" id="chunk-overlap-value">100</span>
+                            </div>
+                            <div class="setting-item">
+                                <label for="top-k">Top-K Chunks</label>
+                                <input type="number" id="top-k" min="1" max="20" value="5">
+                            </div>
+                            <div class="setting-item">
+                                <label>Documentation</label>
+                                <a class="btn btn-secondary btn-block" href="{{ backend_url }}/docs" target="_blank" rel="noopener">
+                                    Open API Docs
+                                </a>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- Session Management -->
+                <div class="session-section">
+                    <button class="btn btn-secondary btn-block" id="clear-chat-btn">🗑️ Clear Chat</button>
+                    <button class="btn btn-secondary btn-block" id="new-session-btn">🔄 New Session</button>
+                </div>
+
+                <!-- History Section -->
+                <div class="history-section">
+                    <h4>📚 Saved Sessions</h4>
+                    <div id="history-list" class="history-list">
+                        {% if history %}
+                            {% for item in history %}
+                            <div class="history-item" data-session-id="{{ item.id }}">
+                                <div class="history-name">{{ item.name }}</div>
+                                <div class="history-date">{{ item.created_at[:19] }}</div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="history-empty">No saved sessions yet</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" data-doc-id="{{ doc_id or '' }}" data-extracted="{{ 'true' if extracted else 'false' }}">
+            <!-- Metrics Bar -->
+            <div class="metrics-bar">
+                <div class="metric">
+                    <span class="metric-label">⚡ Latency</span>
+                    <span class="metric-value" id="metric-latency">{{ metrics.latency_ms|round(0) }} ms</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">📦 Chunks</span>
+                    <span class="metric-value" id="metric-chunks">{{ metrics.retrieved }}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">🎯 Accuracy</span>
+                    <span class="metric-value" id="metric-accuracy">{{ "%.2f"|format(metrics.retrieval_accuracy) }}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">⭐ Relevance</span>
+                    <span class="metric-value" id="metric-relevance">{{ "%.2f"|format(metrics.relevance_score) }}</span>
+                </div>
+            </div>
+
+            <!-- Content Grid -->
+            <div class="content-grid">
+                <!-- Chat Section -->
+                <div class="chat-section">
+                    <div class="section-header">
+                        <h2>💬 Chat with Your PDF</h2>
+                    </div>
+                    <div class="chat-container" id="chat-container">
+                        {% if messages %}
+                            {% for message in messages %}
+                            <div class="message message-{{ message.role }}">
+                                <div class="message-header">
+                                    <span class="message-role">{{ 'You' if message.role == 'user' else 'AI Assistant' }}</span>
+                                </div>
+                                <div class="message-content">{{ message.content }}</div>
+                                {% if message.references %}
+                                <div class="message-references">
+                                    <strong>📎 References:</strong>
+                                    {% for ref in message.references %}
+                                    <span class="reference-tag">Page {{ ref.page }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="chat-empty">
+                                <div class="empty-icon">👋</div>
+                                <p>Upload a PDF, extract it, and start asking questions!</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <input type="text" id="chat-input" placeholder="Ask a question about your PDF..." 
+                                   {% if not extracted or not doc_id %}disabled{% endif %}>
+                            <button class="btn btn-primary" id="send-btn" 
+                                    {% if not extracted or not doc_id %}disabled{% endif %}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="input-hint" id="chat-input-hint" {% if extracted and doc_id %}style="display:none"{% endif %}>
+                            ⚠️ Please upload and extract a PDF first
+                        </p>
+                    </div>
+                </div>
+
+                <!-- PDF Preview Section -->
+                <div class="pdf-section">
+                    <div class="section-header">
+                        <h2>📄 PDF Preview</h2>
+                    </div>
+                    <div class="pdf-container" id="pdf-container">
+                        {% if filename and pdf_url %}
+                            <div class="pdf-viewer">
+                                <iframe id="pdf-viewer" src="{{ pdf_url }}" style="display: block; width: 100%; height: 100%; border: none;"></iframe>
+                            </div>
+                        {% elif filename %}
+                            <div class="pdf-viewer">
+                                <div class="pdf-placeholder">
+                                    <p>PDF: {{ filename }}</p>
+                                    <small>PDF preview will appear here after upload</small>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="pdf-empty">
+                                <div class="empty-icon">📂</div>
+                                <p>No PDF uploaded yet</p>
+                                <small>Upload a file from the sidebar to preview it here</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p id="loading-text">Processing...</p>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
+

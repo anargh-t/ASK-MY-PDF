@@ -23,7 +23,7 @@ Four sprint plan that mirrors the final PPT narrative. Each sprint lists backlog
 ---
 
 ## Sprint 2 – API + UI Development
-**Goal:** Secure backend endpoints and Streamlit UI with product-grade flow.  
+**Goal:** Secure backend endpoints and Flask UI with product-grade flow.  
 **Duration:** 1 week  
 **Outcome:** ✅ Delivered
 
@@ -31,11 +31,11 @@ Four sprint plan that mirrors the final PPT narrative. Each sprint lists backlog
 |-------|-------------|--------|-------|
 | S2-1 | `/upload`, `/extract-text`, `/query`, `/history` FastAPI endpoints | ✅ | Implemented in `backend/main.py` with pydantic models |
 | S2-2 | Document registry + history log | ✅ | Tracks doc metadata, prevents orphan queries |
-| S2-3 | Streamlit UI (upload → preview → chat → history) | ✅ | `frontend/app.py`, includes manual relevance slider |
+| S2-3 | Flask UI (upload → preview → chat → history) | ✅ | `frontend/app.py`, includes manual relevance slider |
 | S2-4 | System indicator + success messaging | ✅ | UI shows backend health + “PDF processed successfully” |
 | S2-5 | Evaluation view | ✅ | UI exposes latency, retrieval accuracy, relevance score |
 
-**Sprint Demo:** Live Streamlit walkthrough hitting FastAPI backend locally.  
+**Sprint Demo:** Live Flask walkthrough hitting FastAPI backend locally.  
 **Open Follow-ups:** Add pagination to history when >20 entries (backlog).
 
 ---
@@ -71,7 +71,7 @@ Four sprint plan that mirrors the final PPT narrative. Each sprint lists backlog
 | S4-4 | Appendix artifacts (backlog, release plan, burndown, etc.) | ✅ | `docs/appendix.md` |
 | S4-5 | Demo readiness checklist + future roadmap | ✅ | README + backlog callouts |
 
-**Sprint Demo:** Repo tour + Streamlit demo video placeholder (to be recorded).  
+**Sprint Demo:** Repo tour + Flask demo video placeholder (to be recorded).  
 **Release Tag:** `v1.0.0`.
 
 ---

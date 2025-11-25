@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Use this guide when the FastAPI/Streamlit stack misbehaves. The most common issues are LLM configuration, missing indices, or port conflicts.
+Use this guide when the FastAPI/Flask stack misbehaves. The most common issues are LLM configuration, missing indices, or port conflicts.
 
 ---
 
@@ -37,7 +37,7 @@ Use this guide when the FastAPI/Streamlit stack misbehaves. The most common issu
    taskkill /PID <PID> /F
    ```
    Then restart with `uvicorn backend.main:app --port 8000`.
-3. Ensure the Streamlit app points to the same backend URL (sidebar input defaults to `http://localhost:8000`).
+3. Ensure the Flask UI points to the same backend URL (`BACKEND_URL` env var defaults to `http://localhost:8000`).
 4. Clear browser cache / hard refresh if the UI still shows stale errors.
 
 ---
@@ -70,10 +70,10 @@ Use this guide when the FastAPI/Streamlit stack misbehaves. The most common issu
    ```powershell
    uvicorn backend.main:app --reload --port 8000
    ```
-4. **Run Streamlit UI**
+4. **Run Flask UI**
    ```powershell
    cd frontend
-   streamlit run app.py
+   python app.py
    ```
 
 ---
@@ -82,7 +82,7 @@ Use this guide when the FastAPI/Streamlit stack misbehaves. The most common issu
 1. Stop server (`Ctrl+C`), ensure no stray Uvicorn processes are running.
 2. Remove `__pycache__` folders (optional) and re-install requirements if dependencies changed.
 3. Delete temporary uploads in `data/uploaded_files/` if space is an issue (the backend will recreate them).
-4. Restart Uvicorn, then refresh the Streamlit page.
+4. Restart Uvicorn, then refresh the Flask page.
 
 ---
 

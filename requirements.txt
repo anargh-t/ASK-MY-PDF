@@ -2,10 +2,8 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-httpx==0.26.0
 python-dotenv==1.0.0
 pydantic==2.5.2
-pydantic-settings==2.1.0
 
 # PDF processing
 pypdf==3.17.1
@@ -29,6 +27,7 @@ langchain-openai==0.1.7
 langchain-google-genai==1.0.5
 
 # Frontend
-streamlit==1.38.0
+flask==3.0.0
+werkzeug==3.0.1
 requests==2.31.0
 

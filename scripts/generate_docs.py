@@ -21,7 +21,7 @@ def create_architecture_png() -> None:
     draw.text((40, 20), "ASK MY PDF - System Architecture", fill="black", font=heading_font)
 
     boxes = [
-        (50, 80, 350, 200, "PDF Upload\n(Streamlit UI)"),
+        (50, 80, 350, 200, "PDF Upload\n(Flask UI)"),
         (420, 80, 720, 200, "Validation & Storage\n(FastAPI)"),
         (790, 80, 1090, 200, "Extraction Layer\n(pdfplumber)"),
         (50, 260, 350, 380, "Chunking + Cleaning\n(500 tokens, overlap 100)"),
@@ -104,7 +104,7 @@ def create_sprint_plan_pdf() -> None:
         ],
         "Sprint 2 - API + UI": [
             "Expose /upload, /extract-text, /query, /history endpoints.",
-            "Streamlit UI for upload, preview, chat, and history.",
+            "Flask UI for upload, preview, chat, and history.",
         ],
         "Sprint 3 - Security & Robustness": [
             "Validation, threat model, resilience testing, secrets management.",

@@ -11,11 +11,11 @@
 - **v0.1 – Chat Only:** UI hits Gemini directly without document context.
 - **v0.2 – Text Extraction:** Add PDF ingestion, chunking, and manual query context.
 - **v0.3 – RAG End-to-End:** Introduce FAISS index, retrieval, and evaluation metrics.
-- **v1.0 – Secure Product:** Hardened FastAPI backend, Streamlit UI, documentation, and packaging assets.
+- **v1.0 – Secure Product:** Hardened FastAPI backend, Flask UI, documentation, and packaging assets.
 
 ## C. High-Level Sprint Plan
 1. **Sprint 1:** Model development (extraction, chunking, embeddings, FAISS, metrics).
-2. **Sprint 2:** Backend API + Streamlit UI, full CRUD endpoints, upload/extract/query/history.
+2. **Sprint 2:** Backend API + Flask UI, full CRUD endpoints, upload/extract/query/history.
 3. **Sprint 3:** Security posture, STRIDE analysis, logging, input validation, failure simulations.
 4. **Sprint 4:** Packaging, docs, release checklist, demo video hook, README polish.
 
@@ -26,7 +26,7 @@
 | S1-2 | Build chunker + embedding generator | 3 |
 | S1-3 | Persist FAISS index + metadata | 5 |
 | S2-1 | Design FastAPI endpoints (/upload,/extract-text,/query,/history) | 8 |
-| S2-2 | Implement Streamlit UI with history | 5 |
+| S2-2 | Implement Flask UI with history | 5 |
 | S3-1 | Add validation + exception handling + STRIDE docs | 5 |
 | S4-1 | Produce appendix artifacts + README + packaging | 3 |
 
@@ -42,8 +42,7 @@ ASK-MY-PDF/
 │   ├── rag.py
 │   └── vector_store/
 ├── frontend/
-│   ├── app.py
-│   └── components/
+│   └── app.py
 ├── data/
 │   └── uploaded_files/
 ├── models/
