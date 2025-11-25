@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with any PDF - ASK MY PDF</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            color: #1a1a1a;
+            overflow: hidden;
+        }
+
+        .container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .hero h1 {
+            font-size: 68px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            line-height: 1.1;
+        }
+
+        .hero h1 .chat-text {
+            color: #1a1a1a;
+        }
+
+        .hero h1 .pdf-text {
+            background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            padding: 0 12px;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .hero p a {
+            color: #f59e0b;
+            text-decoration: none;
+            border-bottom: 2px solid #f59e0b;
+            transition: all 0.2s;
+        }
+
+        .hero p a:hover {
+            color: #d97706;
+            border-bottom-color: #d97706;
+        }
+
+        /* Upload Section */
+        .upload-container {
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .drop-hint {
+            position: absolute;
+            top: -40px;
+            right: 60px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #7c3aed;
+            font-weight: 600;
+            font-size: 14px;
+            pointer-events: none;
+        }
+
+        .drop-hint svg {
+            width: 80px;
+            height: 40px;
+        }
+
+        .upload-box {
+            background: white;
+            border: 3px dashed #e5e7eb;
+            border-radius: 24px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .upload-box:hover {
+            border-color: #a855f7;
+            background: #faf5ff;
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(168, 85, 247, 0.15);
+        }
+
+        .upload-box.drag-over {
+            border-color: #7c3aed;
+            background: #f5f3ff;
+            border-style: solid;
+        }
+
+        .upload-icon {
+            width: 70px;
+            height: 70px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #833aed 0%, #374151 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-icon svg {
+            width: 35px;
+            height: 35px;
+            stroke: white;
+            stroke-width: 2;
+            fill: none;
+        }
+
+        .upload-text {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 12px;
+        }
+
+        .upload-subtext {
+            font-size: 14px;
+            color: #9ca3af;
+        }
+
+        .upload-button {
+            background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 24px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(168, 85, 247, 0.3);
+        }
+
+        .upload-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(168, 85, 247, 0.4);
+        }
+
+        .upload-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        /* Loading State */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-content {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #f3f4f6;
+            border-top-color: #a855f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        .loading-subtext {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .toast.success {
+            border-left: 4px solid #10b981;
+        }
+
+        .toast-icon {
+            font-size: 24px;
+        }
+
+        .toast-message {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1a1a;
+        }
+
+        /* Footer */
+        .footer {
+            padding: 24px 20px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(5px);
+        }
+
+        .footer-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .footer-logo {
+            font-weight: 700;
+            font-size: 16px;
+            background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .footer-copyright {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 42px;
+            }
+
+            .hero p {
+                font-size: 16px;
+            }
+
+            .upload-box {
+                padding: 40px 20px;
+            }
+
+            .drop-hint {
+                display: none;
+            }
+
+            .footer-content {
+                gap: 6px;
+                flex-wrap: wrap;
+            }
+
+        }
+
+        @media (max-height: 700px) {
+            .hero h1 {
+                font-size: 48px;
+                margin-bottom: 12px;
+            }
+
+            .hero p {
+                font-size: 15px;
+                margin-bottom: 6px;
+            }
+
+            .upload-box {
+                padding: 40px 30px;
+            }
+
+            .upload-icon {
+                width: 60px;
+                height: 60px;
+                margin-bottom: 16px;
+            }
+
+            .upload-button {
+                padding: 12px 32px;
+                margin-top: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Hero -->
+        <div class="hero">
+            <h1>
+                <span class="chat-text">Chat with any</span><span class="pdf-text">PDF</span>
+            </h1>
+            <p>Join millions of <a href="#">students, researchers and professionals</a> to instantly</p>
+            <p>answer questions and understand research with AI</p>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="upload-container">
+            <div class="drop-hint">
+                <span>DRAG & DROP YOUR<br>PDF FILE HERE</span>
+                <svg viewBox="0 0 100 50" fill="none">
+                    <path d="M10,25 Q30,5 50,25 T90,25" stroke="#7c3aed" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                            <polygon points="0 0, 10 3, 0 6" fill="#7c3aed"/>
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+
+            <div class="upload-box" id="upload-box">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                </div>
+                <div class="upload-text">Click to upload, or drag PDF here</div>
+                <div class="upload-subtext">Maximum file size: 20MB</div>
+                <button class="upload-button" onclick="document.getElementById('file-input').click()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v8M8 12h8"/>
+                    </svg>
+                    Upload PDF
+                </button>
+            </div>
+
+            <input type="file" id="file-input" accept=".pdf">
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-logo">📄 ASK MY PDF</div>
+            <div class="footer-copyright">© 2025 All rights reserved</div>
+        </div>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-text">Processing your PDF...</div>
+            <div class="loading-subtext">This may take a few moments</div>
+        </div>
+    </div>
+
+    <script>
+        const uploadBox = document.getElementById('upload-box');
+        const fileInput = document.getElementById('file-input');
+        const loadingOverlay = document.getElementById('loading-overlay');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, () => {
+                uploadBox.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, () => {
+                uploadBox.classList.remove('drag-over');
+            }, false);
+        });
+
+        // Handle dropped files
+        uploadBox.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }, false);
+
+        // Handle file input change
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+
+            const file = files[0];
+
+            // Validate file type
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                showToast('Please upload a PDF file', 'error');
+                return;
+            }
+
+            // Validate file size (20MB)
+            if (file.size > 20 * 1024 * 1024) {
+                showToast('File size must be less than 20MB', 'error');
+                return;
+            }
+
+            uploadFile(file);
+        }
+
+        async function uploadFile(file) {
+            loadingOverlay.classList.add('active');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // Upload PDF
+                const uploadResponse = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!uploadResponse.ok) {
+                    const error = await uploadResponse.json();
+                    throw new Error(error.error || 'Upload failed');
+                }
+
+                const uploadData = await uploadResponse.json();
+                const docId = uploadData.doc_id;
+
+                // Auto-extract and index
+                const extractResponse = await fetch('/api/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        doc_id: docId,
+                        chunk_size: 500,
+                        overlap: 100
+                    })
+                });
+
+                if (!extractResponse.ok) {
+                    const error = await extractResponse.json();
+                    throw new Error(error.error || 'Extraction failed');
+                }
+
+                // Redirect to chat interface
+                window.location.href = '/chat';
+
+            } catch (error) {
+                loadingOverlay.classList.remove('active');
+                showToast(error.message, 'error');
+            }
+        }
+
+        function showToast(message, type = 'error') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div class="toast-icon">${type === 'error' ? '❌' : '✅'}</div>
+                <div class="toast-message">${message}</div>
+            `;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

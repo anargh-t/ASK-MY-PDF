@@ -37,7 +37,13 @@ def init_session():
 
 @app.route('/')
 def index():
-    """Main page"""
+    """Landing page"""
+    return render_template('landing.html')
+
+
+@app.route('/chat')
+def chat():
+    """Main chat interface"""
     # Check backend status
     backend_status = {'connected': False, 'documents': 0, 'history': 0}
     try:
