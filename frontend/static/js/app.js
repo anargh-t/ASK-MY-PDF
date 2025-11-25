@@ -6,13 +6,12 @@ let messages = [];
 
 // DOM Elements
 const fileInput = document.getElementById('file-input');
+const chatUploadArea = document.getElementById('chat-upload-area');
 const uploadArea = document.getElementById('upload-area');
 const uploadProgress = document.getElementById('upload-progress');
 const fileInfo = document.getElementById('file-info');
 const fileName = document.getElementById('file-name');
 const fileSize = document.getElementById('file-size');
-const removeFileBtn = document.getElementById('remove-file');
-const extractSection = document.getElementById('extract-section');
 const extractBtn = document.getElementById('extract-btn');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
@@ -45,47 +44,95 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Show extract button if doc_id exists
-    if (currentDocId && extractSection) {
-        extractSection.style.display = 'block';
-    }
+    // Extract button is now in Advanced Settings, no need to show/hide it
     
     initializeEventListeners();
     initializeSettings();
     checkBackendStatus();
     updateChatInputState();
+    
+    // Only show upload area if template doesn't already have content and no PDF is loaded
+    // The template will handle showing upload area vs ready state based on session
+    // We only need to initialize if the upload area exists in the template
+    const existingUploadArea = chatContainer?.querySelector('#chat-upload-area');
+    if (existingUploadArea) {
+        // Upload area exists in template, just initialize event listeners
+        const newFileInput = existingUploadArea.querySelector('#file-input');
+        const newUploadArea = existingUploadArea.querySelector('#upload-area');
+        if (newFileInput && newUploadArea) {
+            newUploadArea.addEventListener('click', () => newFileInput.click());
+            newUploadArea.addEventListener('dragover', handleDragOver);
+            newUploadArea.addEventListener('drop', handleDrop);
+            newUploadArea.addEventListener('dragleave', handleDragLeave);
+            newFileInput.addEventListener('change', handleFileSelect);
+        }
+    }
 });
 
 // Event Listeners
 function initializeEventListeners() {
     // File upload
-    uploadArea.addEventListener('click', () => fileInput.click());
-    uploadArea.addEventListener('dragover', handleDragOver);
-    uploadArea.addEventListener('drop', handleDrop);
-    uploadArea.addEventListener('dragleave', handleDragLeave);
-    fileInput.addEventListener('change', handleFileSelect);
-    removeFileBtn.addEventListener('click', removeFile);
+    if (uploadArea && fileInput) {
+        uploadArea.addEventListener('click', () => fileInput.click());
+        uploadArea.addEventListener('dragover', handleDragOver);
+        uploadArea.addEventListener('drop', handleDrop);
+        uploadArea.addEventListener('dragleave', handleDragLeave);
+    }
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFileSelect);
+    }
     
     // Extract
-    extractBtn.addEventListener('click', handleExtract);
+    if (extractBtn) {
+        extractBtn.addEventListener('click', handleExtract);
+    }
 
     
     // Chat
-    sendBtn.addEventListener('click', handleSendMessage);
-    chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage();
+    if (sendBtn) {
+        sendBtn.addEventListener('click', handleSendMessage);
+    }
+    if (chatInput) {
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+    }
+    
+    // Session management
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', clearChat);
+    }
+    if (newSessionBtn) {
+        newSessionBtn.addEventListener('click', newSession);
+    }
+    
+    // History items - click on info area to load session
+    document.querySelectorAll('.history-info').forEach(info => {
+        const item = info.closest('.history-item');
+        if (item) {
+            info.addEventListener('click', () => loadSession(item.dataset.sessionId));
         }
     });
     
-    // Session management
-    clearChatBtn.addEventListener('click', clearChat);
-    newSessionBtn.addEventListener('click', newSession);
+    // History edit buttons
+    document.querySelectorAll('.history-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sessionId = btn.dataset.sessionId;
+            renameSession(sessionId);
+        });
+    });
     
-    // History items
-    document.querySelectorAll('.history-item').forEach(item => {
-        item.addEventListener('click', () => loadSession(item.dataset.sessionId));
+    // History delete buttons
+    document.querySelectorAll('.history-delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sessionId = btn.dataset.sessionId;
+            deleteSession(sessionId);
+        });
     });
 }
 
@@ -142,11 +189,14 @@ function handleFile(file) {
     }
     
     currentFilename = file.name;
-    fileName.textContent = file.name;
-    fileSize.textContent = formatFileSize(file.size);
-    fileInfo.style.display = 'block';
-    uploadArea.querySelector('.upload-placeholder').style.display = 'none';
-    uploadProgress.style.display = 'block';
+    if (fileName) fileName.textContent = file.name;
+    if (fileSize) fileSize.textContent = formatFileSize(file.size);
+    if (fileInfo) fileInfo.style.display = 'block';
+    if (uploadArea) {
+        const placeholder = uploadArea.querySelector('.upload-placeholder');
+        if (placeholder) placeholder.style.display = 'none';
+    }
+    if (uploadProgress) uploadProgress.style.display = 'block';
     
     uploadFile(file);
 }
@@ -184,15 +234,8 @@ function uploadFile(file) {
         
         showToast('success', 'Upload Successful', `${data.filename} uploaded successfully`);
         
-        // Show extract button
-        extractSection.style.display = 'block';
-        
         // Update UI
-        uploadProgress.style.display = 'none';
-        uploadArea.querySelector('.upload-placeholder').style.display = 'block';
-        
-        // Update chat input state
-        updateChatInputState();
+        if (uploadProgress) uploadProgress.style.display = 'none';
         
         // Load PDF preview - will be loaded from server if page reloads
         loadPDFPreview(file);
@@ -207,6 +250,9 @@ function uploadFile(file) {
                 if (placeholder) placeholder.style.display = 'none';
             }
         }
+        
+        // Automatically extract and index the PDF
+        autoExtract(data.doc_id);
     })
     .catch(error => {
         hideLoading();
@@ -217,15 +263,101 @@ function uploadFile(file) {
 
 function removeFile() {
     fileInput.value = '';
-    fileInfo.style.display = 'none';
-    extractSection.style.display = 'none';
+    if (fileInfo) fileInfo.style.display = 'none';
     currentDocId = null;
     currentFilename = null;
     isExtracted = false;
-    uploadArea.querySelector('.upload-placeholder').style.display = 'block';
-    uploadProgress.style.display = 'none';
+    
+    if (uploadArea) {
+        const placeholder = uploadArea.querySelector('.upload-placeholder');
+        if (placeholder) placeholder.style.display = 'flex';
+        if (uploadProgress) uploadProgress.style.display = 'none';
+    }
+    
+    // Show upload area again
+    if (chatUploadArea) {
+        chatUploadArea.style.display = 'flex';
+    }
+    
+    // Clear chat messages
+    if (chatContainer) {
+        chatContainer.innerHTML = '';
+        const uploadAreaClone = chatUploadArea ? chatUploadArea.cloneNode(true) : null;
+        if (uploadAreaClone) {
+            chatContainer.appendChild(uploadAreaClone);
+            // Re-initialize event listeners for the new upload area
+            const newUploadArea = chatContainer.querySelector('#upload-area');
+            const newFileInput = chatContainer.querySelector('#file-input');
+            if (newUploadArea && newFileInput) {
+                newUploadArea.addEventListener('click', () => newFileInput.click());
+                newUploadArea.addEventListener('dragover', handleDragOver);
+                newUploadArea.addEventListener('drop', handleDrop);
+                newUploadArea.addEventListener('dragleave', handleDragLeave);
+                newFileInput.addEventListener('change', handleFileSelect);
+            }
+        }
+    }
+    
     pdfContainer.innerHTML = '<div class="pdf-empty"><div class="empty-icon">📂</div><p>No PDF uploaded yet</p></div>';
     updateChatInputState();
+}
+
+// Auto-extract function called after upload
+function autoExtract(docId) {
+    if (!docId) return;
+    
+    const chunkSize = parseInt(chunkSizeSlider.value) || 500;
+    const overlap = parseInt(chunkOverlapSlider.value) || 100;
+    
+    showLoading('Extracting and indexing PDF...');
+    
+    fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            doc_id: docId,
+            chunk_size: chunkSize,
+            overlap: overlap
+        })
+    })
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
+    .then(data => {
+        hideLoading();
+        
+        if (data.error) {
+            showToast('error', 'Extraction Failed', data.error);
+            return;
+        }
+        
+        isExtracted = true;
+        showToast('success', 'Ready to Chat!', `Indexed ${data.chunks_indexed} chunks. You can now ask questions!`);
+        
+        // Hide upload area and show empty chat state
+        if (chatUploadArea) {
+            chatUploadArea.style.display = 'none';
+        }
+        
+        // Show empty chat message
+        if (chatContainer && chatContainer.querySelector('.chat-upload-area')) {
+            chatContainer.innerHTML = '<div class="chat-empty"><div class="empty-icon">👋</div><p>Start asking questions about your PDF!</p></div>';
+        }
+        
+        updateChatInputState();
+    })
+    .catch(error => {
+        hideLoading();
+        showToast('error', 'Extraction Error', error.message);
+    });
 }
 
 function loadPDFPreview(file) {
@@ -264,17 +396,17 @@ function loadPDFPreview(file) {
     }
 }
 
-// Extract Handler
+// Extract Handler (manual extraction from Advanced Settings)
 function handleExtract() {
     if (!currentDocId) {
         showToast('error', 'No Document', 'Please upload a PDF first');
         return;
     }
     
-    const chunkSize = parseInt(chunkSizeSlider.value);
-    const overlap = parseInt(chunkOverlapSlider.value);
+    const chunkSize = parseInt(chunkSizeSlider.value) || 500;
+    const overlap = parseInt(chunkOverlapSlider.value) || 100;
     
-    showLoading('Extracting and indexing PDF...');
+    showLoading('Re-indexing PDF with new settings...');
     
     fetch('/api/extract', {
         method: 'POST',
@@ -305,7 +437,7 @@ function handleExtract() {
         }
         
         isExtracted = true;
-        showToast('success', 'Indexing Complete', `Indexed ${data.chunks_indexed} chunks`);
+        showToast('success', 'Re-indexing Complete', `Re-indexed ${data.chunks_indexed} chunks with new settings`);
         updateChatInputState();
     })
     .catch(error => {
@@ -316,6 +448,11 @@ function handleExtract() {
 
 // Chat Handlers
 function handleSendMessage() {
+    if (!chatInput) {
+        console.error('Chat input not found');
+        return;
+    }
+    
     const question = chatInput.value.trim();
     
     if (!question) return;
@@ -341,14 +478,23 @@ function handleSendMessage() {
     }
     
     // Clear input immediately for better UX
-    chatInput.value = '';
+    if (chatInput) {
+        chatInput.value = '';
+    }
     
     // Add user message to UI
     addMessage('user', question);
     
+    // Show thinking indicator
+    showThinkingIndicator();
+    
     // Disable input while processing
-    chatInput.disabled = true;
-    sendBtn.disabled = true;
+    if (chatInput) {
+        chatInput.disabled = true;
+    }
+    if (sendBtn) {
+        sendBtn.disabled = true;
+    }
     
     // Query backend
     const topK = parseInt(document.getElementById('top-k').value) || 5;
@@ -382,8 +528,15 @@ function handleSendMessage() {
         }
     })
     .then(({ data, status }) => {
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
+        // Remove thinking indicator
+        removeThinkingIndicator();
+        
+        if (chatInput) {
+            chatInput.disabled = false;
+        }
+        if (sendBtn) {
+            sendBtn.disabled = false;
+        }
         
         if (status !== 200 || data.error) {
             if (data.error && data.error.toLowerCase().includes('re-upload')) {
@@ -407,8 +560,15 @@ function handleSendMessage() {
         }
     })
     .catch(error => {
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
+        // Remove thinking indicator
+        removeThinkingIndicator();
+        
+        if (chatInput) {
+            chatInput.disabled = false;
+        }
+        if (sendBtn) {
+            sendBtn.disabled = false;
+        }
         console.error('Query error:', error);
         
         // Remove user message if query failed
@@ -451,16 +611,64 @@ function addMessage(role, content, references = []) {
         emptyState.remove();
     }
     
+    // Remove thinking indicator if present
+    removeThinkingIndicator();
+    
     chatContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     
     messages.push({ role, content, references });
 }
 
+function showThinkingIndicator() {
+    // Remove any existing thinking indicator
+    removeThinkingIndicator();
+    
+    if (!chatContainer) return;
+    
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = 'message message-assistant message-thinking';
+    thinkingDiv.id = 'thinking-indicator';
+    
+    const header = document.createElement('div');
+    header.className = 'message-header';
+    header.innerHTML = '<span class="message-role">AI Assistant</span>';
+    
+    const messageContent = document.createElement('div');
+    messageContent.className = 'message-content';
+    messageContent.innerHTML = `
+        <div class="thinking-content">
+            <span class="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </span>
+            <span class="thinking-text">Thinking...</span>
+        </div>
+    `;
+    
+    thinkingDiv.appendChild(header);
+    thinkingDiv.appendChild(messageContent);
+    
+    chatContainer.appendChild(thinkingDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function removeThinkingIndicator() {
+    const thinkingIndicator = document.getElementById('thinking-indicator');
+    if (thinkingIndicator) {
+        thinkingIndicator.remove();
+    }
+}
+
 function updateChatInputState() {
     const isReady = currentDocId && isExtracted;
-    chatInput.disabled = !isReady;
-    sendBtn.disabled = !isReady;
+    if (chatInput) {
+        chatInput.disabled = !isReady;
+    }
+    if (sendBtn) {
+        sendBtn.disabled = !isReady;
+    }
     
     const hintEl = document.getElementById('chat-input-hint');
     if (hintEl) {
@@ -471,11 +679,54 @@ function updateChatInputState() {
 // Session Management
 function clearChat() {
     fetch('/api/clear', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
     })
-    .then(() => {
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
+    .then(data => {
+        if (data.error) {
+            showToast('error', 'Error', data.error);
+            return;
+        }
+        
         messages = [];
-        chatContainer.innerHTML = '<div class="chat-empty"><div class="empty-icon">👋</div><p>Upload a PDF, extract it, and start asking questions!</p></div>';
+        // Only clear messages, keep upload area if PDF is still loaded
+        if (currentDocId && isExtracted) {
+            if (chatContainer) {
+                chatContainer.innerHTML = '<div class="chat-empty"><div class="empty-icon">👋</div><p>Start asking questions about your PDF!</p></div>';
+            }
+        } else {
+            // Show upload area if no PDF is loaded
+            if (chatContainer) {
+                chatContainer.innerHTML = '';
+                const uploadAreaClone = chatUploadArea ? chatUploadArea.cloneNode(true) : null;
+                if (uploadAreaClone) {
+                    chatContainer.appendChild(uploadAreaClone);
+                    // Re-initialize event listeners
+                    const newUploadArea = chatContainer.querySelector('#upload-area');
+                    const newFileInput = chatContainer.querySelector('#file-input');
+                    if (newUploadArea && newFileInput) {
+                        newUploadArea.addEventListener('click', () => newFileInput.click());
+                        newUploadArea.addEventListener('dragover', handleDragOver);
+                        newUploadArea.addEventListener('drop', handleDrop);
+                        newUploadArea.addEventListener('dragleave', handleDragLeave);
+                        newFileInput.addEventListener('change', handleFileSelect);
+                    }
+                } else {
+                    chatContainer.innerHTML = '<div class="chat-empty"><div class="empty-icon">📂</div><p>Upload a PDF to get started</p></div>';
+                }
+            }
+        }
         updateMetrics({
             latency_ms: 0,
             retrieved: 0,
@@ -484,7 +735,9 @@ function clearChat() {
         });
     })
     .catch(error => {
-        showToast('error', 'Error', 'Failed to clear chat');
+        console.error('Clear chat error:', error);
+        const errorMsg = error.message || 'Failed to clear chat';
+        showToast('error', 'Error', errorMsg);
     });
 }
 
@@ -492,9 +745,20 @@ function newSession() {
     showLoading('Saving session...');
     
     fetch('/api/new-session', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
     .then(data => {
         hideLoading();
         
@@ -503,26 +767,80 @@ function newSession() {
             return;
         }
         
-        // Reset current session
+        // Reset current session state
         currentDocId = null;
         currentFilename = null;
         isExtracted = false;
         messages = [];
         
-        // Clear UI
-        removeFile();
-        clearChat();
+        // Clear UI elements directly without making additional API calls
+        if (chatContainer) {
+            chatContainer.innerHTML = '';
+            // Show upload area
+            if (chatUploadArea) {
+                const uploadAreaClone = chatUploadArea.cloneNode(true);
+                chatContainer.appendChild(uploadAreaClone);
+                // Re-initialize event listeners for the new upload area
+                const newUploadArea = chatContainer.querySelector('#upload-area');
+                const newFileInput = chatContainer.querySelector('#file-input');
+                if (newUploadArea && newFileInput) {
+                    newUploadArea.addEventListener('click', () => newFileInput.click());
+                    newUploadArea.addEventListener('dragover', handleDragOver);
+                    newUploadArea.addEventListener('drop', handleDrop);
+                    newUploadArea.addEventListener('dragleave', handleDragLeave);
+                    newFileInput.addEventListener('change', handleFileSelect);
+                }
+            } else {
+                chatContainer.innerHTML = '<div class="chat-empty"><div class="empty-icon">📂</div><p>Upload a PDF to get started</p></div>';
+            }
+        }
         
-        // Reload page to refresh history
+        // Clear PDF preview
+        if (pdfContainer) {
+            pdfContainer.innerHTML = '<div class="pdf-empty"><div class="empty-icon">📂</div><p>No PDF uploaded yet</p></div>';
+        }
+        
+        // Reset file input
+        if (fileInput) {
+            fileInput.value = '';
+        }
+        if (fileInfo) {
+            fileInfo.style.display = 'none';
+        }
+        
+        // Show upload area
+        if (chatUploadArea) {
+            chatUploadArea.style.display = 'flex';
+        }
+        
+        // Reset metrics
+        updateMetrics({
+            latency_ms: 0,
+            retrieved: 0,
+            retrieval_accuracy: 0,
+            relevance_score: 0
+        });
+        
+        // Update chat input state
+        updateChatInputState();
+        
+        // Reload page to refresh history in sidebar
         window.location.reload();
     })
     .catch(error => {
         hideLoading();
-        showToast('error', 'Error', 'Failed to create new session');
+        console.error('New session error:', error);
+        const errorMsg = error.message || 'Failed to create new session';
+        showToast('error', 'Error', errorMsg);
     });
 }
 
 function loadSession(sessionId) {
+    if (!sessionId) {
+        showToast('error', 'Error', 'Invalid session ID');
+        return;
+    }
+    
     showLoading('Loading session...');
     
     fetch('/api/load-session', {
@@ -532,7 +850,15 @@ function loadSession(sessionId) {
         },
         body: JSON.stringify({ session_id: sessionId })
     })
-    .then(response => response.json())
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
     .then(data => {
         hideLoading();
         
@@ -546,7 +872,9 @@ function loadSession(sessionId) {
     })
     .catch(error => {
         hideLoading();
-        showToast('error', 'Error', 'Failed to load session');
+        console.error('Load session error:', error);
+        const errorMsg = error.message || 'Failed to load session';
+        showToast('error', 'Error', errorMsg);
     });
 }
 
@@ -640,9 +968,7 @@ function resetClientSessionState() {
         `;
     }
     
-    if (extractSection) {
-        extractSection.style.display = 'none';
-    }
+    // Extract button is in Advanced Settings, no need to hide it
     
     if (fileInfo) {
         fileInfo.style.display = 'none';
@@ -663,5 +989,135 @@ function formatFileSize(bytes) {
     const sizes = ['Bytes', 'KB', 'MB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Session Management - Rename and Delete
+function renameSession(sessionId) {
+    if (!sessionId) {
+        showToast('error', 'Error', 'Invalid session ID');
+        return;
+    }
+    
+    // Find the session name
+    const historyItem = document.querySelector(`.history-item[data-session-id="${sessionId}"]`);
+    if (!historyItem) {
+        showToast('error', 'Error', 'Session not found');
+        return;
+    }
+    
+    const currentName = historyItem.querySelector('.history-name').textContent;
+    
+    // Prompt for new name
+    const newName = prompt('Enter new session name:', currentName);
+    if (!newName || newName.trim() === '') {
+        return;
+    }
+    
+    if (newName.trim() === currentName) {
+        return; // No change
+    }
+    
+    fetch('/api/rename-session', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            session_id: sessionId,
+            name: newName.trim()
+        })
+    })
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
+    .then(data => {
+        if (data.error) {
+            showToast('error', 'Error', data.error);
+            return;
+        }
+        
+        showToast('success', 'Success', 'Session renamed successfully');
+        
+        // Update the UI
+        if (historyItem) {
+            historyItem.querySelector('.history-name').textContent = newName.trim();
+        }
+        
+        // Reload page to refresh history
+        window.location.reload();
+    })
+    .catch(error => {
+        console.error('Rename session error:', error);
+        const errorMsg = error.message || 'Failed to rename session';
+        showToast('error', 'Error', errorMsg);
+    });
+}
+
+function deleteSession(sessionId) {
+    if (!sessionId) {
+        showToast('error', 'Error', 'Invalid session ID');
+        return;
+    }
+    
+    // Confirm deletion
+    if (!confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+        return;
+    }
+    
+    fetch('/api/delete-session', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            session_id: sessionId
+        })
+    })
+    .then(async response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(text || `Server returned status ${response.status}`);
+        }
+    })
+    .then(data => {
+        if (data.error) {
+            showToast('error', 'Error', data.error);
+            return;
+        }
+        
+        showToast('success', 'Success', 'Session deleted successfully');
+        
+        // Remove the item from UI
+        const historyItem = document.querySelector(`.history-item[data-session-id="${sessionId}"]`);
+        if (historyItem) {
+            historyItem.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => {
+                historyItem.remove();
+                
+                // Check if history is empty
+                const historyList = document.getElementById('history-list');
+                if (historyList && historyList.querySelectorAll('.history-item').length === 0) {
+                    historyList.innerHTML = '<p class="history-empty">No saved sessions yet</p>';
+                }
+            }, 300);
+        } else {
+            // Reload page to refresh history
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Delete session error:', error);
+        const errorMsg = error.message || 'Failed to delete session';
+        showToast('error', 'Error', errorMsg);
+    });
 }
 

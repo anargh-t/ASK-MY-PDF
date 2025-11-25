@@ -241,14 +241,38 @@ class RAGPipeline:
         
         latency_ms = (time.perf_counter() - start) * 1000
 
+        # Calculate retrieval accuracy based on score thresholds
+        # FAISS L2 distance: lower is better (0 = identical, higher = less similar)
+        # We consider scores < 1.5 as "accurate" retrievals
+        if filtered:
+            accurate_retrievals = len([item for item in filtered if item["score"] < 1.5])
+            retrieval_accuracy = float(accurate_retrievals) / len(filtered)
+        else:
+            retrieval_accuracy = 0.0
+
+        # Calculate relevance score from similarity scores
+        # Convert distance to similarity (lower distance = higher similarity)
+        # Normalize to 0-1 scale where 1.0 is most relevant
+        if filtered:
+            # Get the best (lowest) score as the most relevant
+            best_score = min(item["score"] for item in filtered)
+            # Average score for overall relevance
+            avg_score = sum(item["score"] for item in filtered) / len(filtered)
+            # Convert distance to similarity: 1 / (1 + distance) gives 0-1 range
+            # Best chunk relevance
+            best_relevance = 1.0 / (1.0 + best_score)
+            # Average relevance across all chunks
+            avg_relevance = 1.0 / (1.0 + avg_score)
+            # Use weighted average: 60% best, 40% average
+            relevance_score = (best_relevance * 0.6) + (avg_relevance * 0.4)
+        else:
+            relevance_score = 0.0
+
         metrics = QueryMetrics(
             latency_ms=latency_ms,
             retrieved=len(filtered),
-            retrieval_accuracy=float(
-                len([item for item in filtered if item["score"] <= 1.0])
-            )
-            / max(1, len(filtered)),
-            relevance_score=None,
+            retrieval_accuracy=retrieval_accuracy,
+            relevance_score=relevance_score,
         )
 
         history_entry = {

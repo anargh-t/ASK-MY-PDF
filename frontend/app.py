@@ -319,65 +319,167 @@ def get_history():
 @app.route('/api/clear', methods=['POST'])
 def clear_session():
     """Clear current session"""
-    session['messages'] = []
-    session['last_metrics'] = {
-        'latency_ms': 0,
-        'retrieved': 0,
-        'retrieval_accuracy': 0,
-        'relevance_score': 0
-    }
-    return jsonify({'success': True})
+    try:
+        session['messages'] = []
+        session['last_metrics'] = {
+            'latency_ms': 0,
+            'retrieved': 0,
+            'retrieval_accuracy': 0,
+            'relevance_score': 0
+        }
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error clearing session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to clear session: {str(e)}'}), 500
 
 
 @app.route('/api/new-session', methods=['POST'])
 def new_session():
     """Save current session and start new one"""
-    # Save to history if there's content
-    if session.get('messages') or session.get('doc_id'):
-        history_entry = {
-            'id': str(uuid.uuid4()),
-            'name': session.get('filename') or f'Session {len(session.get("history", [])) + 1}',
-            'doc_id': session.get('doc_id'),
-            'filename': session.get('filename'),
-            'messages': session.get('messages', []).copy(),
-            'created_at': datetime.utcnow().isoformat()
+    try:
+        # Save to history if there's content
+        if session.get('messages') or session.get('doc_id'):
+            history_entry = {
+                'id': str(uuid.uuid4()),
+                'name': session.get('filename') or f'Session {len(session.get("history", [])) + 1}',
+                'doc_id': session.get('doc_id'),
+                'filename': session.get('filename'),
+                'messages': session.get('messages', []).copy(),
+                'created_at': datetime.utcnow().isoformat()
+            }
+            if 'history' not in session:
+                session['history'] = []
+            session['history'].insert(0, history_entry)
+        
+        # Clear current session
+        session['doc_id'] = None
+        session['extracted'] = False
+        session['messages'] = []
+        session['filename'] = None
+        session['last_metrics'] = {
+            'latency_ms': 0,
+            'retrieved': 0,
+            'retrieval_accuracy': 0,
+            'relevance_score': 0
         }
-        if 'history' not in session:
-            session['history'] = []
-        session['history'].insert(0, history_entry)
-    
-    # Clear current session
-    session['doc_id'] = None
-    session['extracted'] = False
-    session['messages'] = []
-    session['filename'] = None
-    
-    return jsonify({'success': True, 'history': session.get('history', [])})
+        
+        return jsonify({'success': True, 'history': session.get('history', [])})
+    except Exception as e:
+        print(f"Error creating new session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to create new session: {str(e)}'}), 500
 
 
 @app.route('/api/load-session', methods=['POST'])
 def load_session():
     """Load a saved session"""
-    data = request.json
-    session_id = data.get('session_id')
-    
-    if not session_id or 'history' not in session:
-        return jsonify({'error': 'Session not found'}), 404
-    
-    # Find session in history
-    history = session.get('history', [])
-    saved_session = next((s for s in history if s.get('id') == session_id), None)
-    
-    if not saved_session:
-        return jsonify({'error': 'Session not found'}), 404
-    
-    # Restore session
-    session['doc_id'] = saved_session.get('doc_id')
-    session['filename'] = saved_session.get('filename')
-    session['messages'] = saved_session.get('messages', []).copy()
-    session['extracted'] = True  # Assume extracted if it was saved
-    
-    return jsonify({'success': True})
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID is required'}), 400
+        
+        if 'history' not in session:
+            return jsonify({'error': 'No saved sessions found'}), 404
+        
+        # Find session in history
+        history = session.get('history', [])
+        saved_session = next((s for s in history if s.get('id') == session_id), None)
+        
+        if not saved_session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Restore session
+        session['doc_id'] = saved_session.get('doc_id')
+        session['filename'] = saved_session.get('filename')
+        session['messages'] = saved_session.get('messages', []).copy()
+        session['extracted'] = True  # Assume extracted if it was saved
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error loading session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to load session: {str(e)}'}), 500
+
+
+@app.route('/api/rename-session', methods=['POST'])
+def rename_session():
+    """Rename a saved session"""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        new_name = data.get('name', '').strip()
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID is required'}), 400
+        
+        if not new_name:
+            return jsonify({'error': 'Session name is required'}), 400
+        
+        if 'history' not in session:
+            return jsonify({'error': 'No saved sessions found'}), 404
+        
+        # Find session in history
+        history = session.get('history', [])
+        session_index = next((i for i, s in enumerate(history) if s.get('id') == session_id), None)
+        
+        if session_index is None:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Update session name
+        session['history'][session_index]['name'] = new_name
+        
+        return jsonify({'success': True, 'history': session.get('history', [])})
+    except Exception as e:
+        print(f"Error renaming session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to rename session: {str(e)}'}), 500
+
+
+@app.route('/api/delete-session', methods=['POST'])
+def delete_session():
+    """Delete a saved session"""
+    try:
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.json or {}
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID is required'}), 400
+        
+        if 'history' not in session:
+            return jsonify({'error': 'No saved sessions found'}), 404
+        
+        # Find and remove session from history
+        history = session.get('history', [])
+        session_index = next((i for i, s in enumerate(history) if s.get('id') == session_id), None)
+        
+        if session_index is None:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Remove session from history
+        session['history'].pop(session_index)
+        
+        return jsonify({'success': True, 'history': session.get('history', [])})
+    except Exception as e:
+        print(f"Error deleting session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to delete session: {str(e)}'}), 500
 
 
 @app.route('/api/pdf/<doc_id>')

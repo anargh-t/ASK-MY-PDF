@@ -15,8 +15,10 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <h1>📄 ASK MY PDF</h1>
-                <p class="subtitle">AI-Powered PDF Assistant</p>
+                <a href="/" class="header-link">
+                    <h1>📄 ASK MY PDF</h1>
+                    <p class="subtitle">AI-Powered PDF Assistant</p>
+                </a>
             </div>
 
             <div class="sidebar-content">
@@ -25,7 +27,6 @@
                     {% if backend_status.connected %}
                     <div class="status-indicator status-online"></div>
                     <span>Backend Connected</span>
-                    <small>{{ backend_status.documents }} documents indexed</small>
                     {% else %}
                     <div class="status-indicator status-offline"></div>
                     <span>Backend Offline</span>
@@ -33,41 +34,46 @@
                     {% endif %}
                 </div>
 
-                <!-- File Upload Section -->
-                <div class="upload-section">
-                    <h3>📤 Upload PDF</h3>
-                    <div class="upload-area" id="upload-area">
-                        <input type="file" id="file-input" accept=".pdf" style="display: none;">
-                        <div class="upload-placeholder">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p>Click to upload PDF</p>
-                            <small>Max 20MB</small>
-                        </div>
-                        <div class="upload-progress" id="upload-progress" style="display: none;">
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="progress-fill"></div>
-                            </div>
-                            <span id="upload-status">Uploading...</span>
-                        </div>
-                    </div>
-                    <div id="file-info" class="file-info" style="display: none;">
-                        <div class="file-details">
-                            <span class="file-name" id="file-name"></span>
-                            <span class="file-size" id="file-size"></span>
-                        </div>
-                        <button class="btn btn-secondary btn-sm" id="remove-file">Remove</button>
-                    </div>
+                <!-- New Session Button -->
+                <div class="session-section" style="margin-bottom: 1.5rem;">
+                    <button class="btn btn-secondary btn-block" id="new-session-btn">🔄 New Session</button>
                 </div>
 
-                <!-- Extract Button -->
-                <div id="extract-section" style="display: none;">
-                    <button class="btn btn-primary btn-block" id="extract-btn">
-                        🔨 Extract & Build Index
-                    </button>
+                <!-- History Section - Moved to top -->
+                <div class="history-section">
+                    <h4>📚 Recent Sessions</h4>
+                    <div id="history-list" class="history-list">
+                        {% if history %}
+                            {% for item in history %}
+                            <div class="history-item" data-session-id="{{ item.id }}">
+                                <div class="history-content">
+                                    <div class="history-info">
+                                        <div class="history-name">{{ item.name }}</div>
+                                        <div class="history-date">{{ item.created_at[:10] if item.created_at else '' }}</div>
+                                    </div>
+                                    <div class="history-actions">
+                                        <button class="history-action-btn history-edit-btn" data-session-id="{{ item.id }}" title="Rename session">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                            </svg>
+                                        </button>
+                                        <button class="history-action-btn history-delete-btn" data-session-id="{{ item.id }}" title="Delete session">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="3 6 5 6 21 6"></polyline>
+                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                <line x1="10" y1="11" x2="10" y2="17"></line>
+                                                <line x1="14" y1="11" x2="14" y2="17"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="history-empty">No saved sessions yet</p>
+                        {% endif %}
+                    </div>
                 </div>
 
                 <!-- Advanced Settings -->
@@ -90,6 +96,15 @@
                                 <input type="number" id="top-k" min="1" max="20" value="5">
                             </div>
                             <div class="setting-item">
+                                <label>Extract & Build Index</label>
+                                <button class="btn btn-primary btn-block" id="extract-btn">
+                                    🔨 Extract & Build Index
+                                </button>
+                                <small style="display: block; margin-top: 0.5rem; color: var(--text-light); font-size: 0.75rem;">
+                                    PDFs are automatically extracted on upload. Use this to re-index with different settings.
+                                </small>
+                            </div>
+                            <div class="setting-item">
                                 <label>Documentation</label>
                                 <a class="btn btn-secondary btn-block" href="{{ backend_url }}/docs" target="_blank" rel="noopener">
                                     Open API Docs
@@ -102,24 +117,6 @@
                 <!-- Session Management -->
                 <div class="session-section">
                     <button class="btn btn-secondary btn-block" id="clear-chat-btn">🗑️ Clear Chat</button>
-                    <button class="btn btn-secondary btn-block" id="new-session-btn">🔄 New Session</button>
-                </div>
-
-                <!-- History Section -->
-                <div class="history-section">
-                    <h4>📚 Saved Sessions</h4>
-                    <div id="history-list" class="history-list">
-                        {% if history %}
-                            {% for item in history %}
-                            <div class="history-item" data-session-id="{{ item.id }}">
-                                <div class="history-name">{{ item.name }}</div>
-                                <div class="history-date">{{ item.created_at[:19] }}</div>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            <p class="history-empty">No saved sessions yet</p>
-                        {% endif %}
-                    </div>
                 </div>
             </div>
         </aside>
@@ -171,10 +168,48 @@
                                 {% endif %}
                             </div>
                             {% endfor %}
-                        {% else %}
+                        {% elif extracted and doc_id %}
+                            <!-- PDF is already uploaded and extracted, show ready message -->
                             <div class="chat-empty">
                                 <div class="empty-icon">👋</div>
-                                <p>Upload a PDF, extract it, and start asking questions!</p>
+                                <p>Start asking questions about your PDF!</p>
+                            </div>
+                        {% else %}
+                            <!-- Upload Area in Chat Center - only show if no PDF is uploaded -->
+                            <div class="chat-upload-area" id="chat-upload-area">
+                                <input type="file" id="file-input" accept=".pdf" style="display: none;">
+                                <div class="upload-area" id="upload-area">
+                                    <div class="upload-placeholder">
+                                        <div class="upload-icon">
+                                            <svg width="35" height="35" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                <polyline points="17 8 12 3 7 8"></polyline>
+                                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                                            </svg>
+                                        </div>
+                                        <h3>Click to upload, or drag PDF here</h3>
+                                        <p>Maximum file size: 20MB</p>
+                                        <button class="upload-button" onclick="document.getElementById('file-input').click()">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                            </svg>
+                                            Upload PDF
+                                        </button>
+                                    </div>
+                                    <div class="upload-progress" id="upload-progress" style="display: none;">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" id="progress-fill"></div>
+                                        </div>
+                                        <span id="upload-status">Uploading...</span>
+                                    </div>
+                                </div>
+                                <div id="file-info" class="file-info" style="display: none;">
+                                    <div class="file-details">
+                                        <span class="file-name" id="file-name"></span>
+                                        <span class="file-size" id="file-size"></span>
+                                    </div>
+                                </div>
                             </div>
                         {% endif %}
                     </div>

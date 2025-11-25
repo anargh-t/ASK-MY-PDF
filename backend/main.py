@@ -351,11 +351,14 @@ async def query_pdf(payload: QueryRequest):
 
     metrics_dict = asdict(metrics)
     # Ensure relevance_score is always a float for Pydantic validation
+    # If user provided a relevance_score, use it (for manual override)
+    # Otherwise, use the calculated one from metrics
     if payload.relevance_score is not None:
         metrics_dict["relevance_score"] = float(payload.relevance_score)
         if pipeline.history:
             pipeline.history[-1]["metrics"]["relevance_score"] = payload.relevance_score
     else:
+        # Use the calculated relevance_score from metrics (should already be set)
         metrics_dict["relevance_score"] = float(metrics_dict.get("relevance_score") or 0.0)
 
     return QueryResponse(
